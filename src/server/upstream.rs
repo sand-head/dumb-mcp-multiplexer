@@ -1,9 +1,11 @@
 use dashmap::DashMap;
+use reqwest::header::{HeaderName, HeaderValue};
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransportConfig, StreamableHttpClientWorker,
 };
 use rmcp::{service::RunningService, RoleClient, ServiceExt};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::db;
@@ -31,13 +33,9 @@ impl UpstreamManager {
         &self,
         slug: &str,
         url: &str,
-        auth_header: Option<&str>,
+        headers: &HashMap<String, String>,
     ) -> Result<(), String> {
-        // Build transport config
-        let mut config = StreamableHttpClientTransportConfig::with_uri(url);
-        if let Some(auth) = auth_header {
-            config.auth_header = Some(auth.to_string());
-        }
+        let config = build_transport_config(url, headers)?;
 
         // Create the transport worker (reqwest-based)
         let transport = StreamableHttpClientWorker::new(reqwest::Client::new(), config);
@@ -64,12 +62,9 @@ impl UpstreamManager {
     /// Returns the server info and tool count on success.
     pub async fn test_connection(
         url: &str,
-        auth_header: Option<&str>,
+        headers: &HashMap<String, String>,
     ) -> Result<ConnectionTestResult, String> {
-        let mut config = StreamableHttpClientTransportConfig::with_uri(url);
-        if let Some(auth) = auth_header {
-            config.auth_header = Some(auth.to_string());
-        }
+        let config = build_transport_config(url, headers)?;
 
         let transport = StreamableHttpClientWorker::new(reqwest::Client::new(), config);
 
@@ -128,16 +123,33 @@ impl UpstreamManager {
         for server in &servers {
             if !self.connections.contains_key(&server.slug) {
                 if let Some(url) = &server.url {
-                    if let Err(e) = self
-                        .connect(&server.slug, url, server.auth_header.as_deref())
-                        .await
-                    {
+                    if let Err(e) = self.connect(&server.slug, url, &server.headers).await {
                         tracing::error!(slug = %server.slug, error = %e, "Failed to connect to upstream");
                     }
                 }
             }
         }
     }
+}
+
+/// Build a transport config from a URL and headers map.
+fn build_transport_config(
+    url: &str,
+    headers: &HashMap<String, String>,
+) -> Result<StreamableHttpClientTransportConfig, String> {
+    let mut config = StreamableHttpClientTransportConfig::with_uri(url);
+
+    let mut custom_headers = HashMap::new();
+    for (key, value) in headers {
+        let header_name = HeaderName::from_bytes(key.as_bytes())
+            .map_err(|e| format!("Invalid header name '{key}': {e}"))?;
+        let header_value = HeaderValue::from_str(value)
+            .map_err(|e| format!("Invalid header value for '{key}': {e}"))?;
+        custom_headers.insert(header_name, header_value);
+    }
+    config.custom_headers = custom_headers;
+
+    Ok(config)
 }
 
 /// Result of a connection test.

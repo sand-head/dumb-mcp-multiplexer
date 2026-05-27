@@ -1,4 +1,5 @@
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePoolOptions, Sqlite, SqlitePool};
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::types::{McpServer, ServerTransport};
@@ -43,7 +44,7 @@ pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
 /// Get all configured servers.
 pub async fn get_all_servers(pool: &SqlitePool) -> Result<Vec<McpServer>, sqlx::Error> {
     let rows = sqlx::query_as::<_, ServerRow>(
-        "SELECT id, slug, name, transport, enabled, url, auth_header, created_at, updated_at FROM servers ORDER BY name"
+        "SELECT id, slug, name, transport, enabled, url, headers, created_at, updated_at FROM servers ORDER BY name"
     )
     .fetch_all(pool)
     .await?;
@@ -54,7 +55,7 @@ pub async fn get_all_servers(pool: &SqlitePool) -> Result<Vec<McpServer>, sqlx::
 /// Get only enabled servers.
 pub async fn get_enabled_servers(pool: &SqlitePool) -> Result<Vec<McpServer>, sqlx::Error> {
     let rows = sqlx::query_as::<_, ServerRow>(
-        "SELECT id, slug, name, transport, enabled, url, auth_header, created_at, updated_at FROM servers WHERE enabled = 1 ORDER BY name"
+        "SELECT id, slug, name, transport, enabled, url, headers, created_at, updated_at FROM servers WHERE enabled = 1 ORDER BY name"
     )
     .fetch_all(pool)
     .await?;
@@ -68,7 +69,7 @@ pub async fn get_server_by_slug(
     slug: &str,
 ) -> Result<Option<McpServer>, sqlx::Error> {
     let row = sqlx::query_as::<_, ServerRow>(
-        "SELECT id, slug, name, transport, enabled, url, auth_header, created_at, updated_at FROM servers WHERE slug = ?"
+        "SELECT id, slug, name, transport, enabled, url, headers, created_at, updated_at FROM servers WHERE slug = ?"
     )
     .bind(slug)
     .fetch_optional(pool)
@@ -83,7 +84,7 @@ pub async fn get_server_by_id(
     id: &str,
 ) -> Result<Option<McpServer>, sqlx::Error> {
     let row = sqlx::query_as::<_, ServerRow>(
-        "SELECT id, slug, name, transport, enabled, url, auth_header, created_at, updated_at FROM servers WHERE id = ?"
+        "SELECT id, slug, name, transport, enabled, url, headers, created_at, updated_at FROM servers WHERE id = ?"
     )
     .bind(id)
     .fetch_optional(pool)
@@ -98,17 +99,18 @@ pub async fn create_server(
     slug: &str,
     name: &str,
     url: Option<&str>,
-    auth_header: Option<&str>,
+    headers: &HashMap<String, String>,
 ) -> Result<McpServer, sqlx::Error> {
     let id = uuid::Uuid::new_v4().to_string();
+    let headers_json = serde_json::to_string(headers).unwrap_or_else(|_| "{}".to_string());
     sqlx::query(
-        "INSERT INTO servers (id, slug, name, transport, enabled, url, auth_header) VALUES (?, ?, ?, 'remote_http', 1, ?, ?)"
+        "INSERT INTO servers (id, slug, name, transport, enabled, url, headers) VALUES (?, ?, ?, 'remote_http', 1, ?, ?)"
     )
     .bind(&id)
     .bind(slug)
     .bind(name)
     .bind(url)
-    .bind(auth_header)
+    .bind(&headers_json)
     .execute(pool)
     .await?;
 
@@ -125,15 +127,16 @@ pub async fn update_server(
     slug: &str,
     name: &str,
     url: Option<&str>,
-    auth_header: Option<&str>,
+    headers: &HashMap<String, String>,
 ) -> Result<(), sqlx::Error> {
+    let headers_json = serde_json::to_string(headers).unwrap_or_else(|_| "{}".to_string());
     sqlx::query(
-        "UPDATE servers SET slug = ?, name = ?, url = ?, auth_header = ?, updated_at = datetime('now') WHERE id = ?"
+        "UPDATE servers SET slug = ?, name = ?, url = ?, headers = ?, updated_at = datetime('now') WHERE id = ?"
     )
     .bind(slug)
     .bind(name)
     .bind(url)
-    .bind(auth_header)
+    .bind(&headers_json)
     .bind(id)
     .execute(pool)
     .await?;
@@ -178,7 +181,7 @@ struct ServerRow {
     transport: String,
     enabled: bool,
     url: Option<String>,
-    auth_header: Option<String>,
+    headers: String,
     created_at: String,
     updated_at: String,
 }
@@ -195,7 +198,7 @@ impl From<ServerRow> for McpServer {
             },
             enabled: row.enabled,
             url: row.url,
-            auth_header: row.auth_header,
+            headers: serde_json::from_str(&row.headers).unwrap_or_default(),
             created_at: row.created_at,
             updated_at: row.updated_at,
         }

@@ -115,7 +115,7 @@ fn ServerDetailView(
                 transport=server.transport.to_string()
                 enabled=enabled
                 url=server.url.clone()
-                has_auth=server.auth_header.is_some()
+                header_count=server.headers.len()
                 slug=server.slug.clone()
             />
 
@@ -206,7 +206,7 @@ fn ServerConfigPanel(
     transport: String,
     enabled: ReadSignal<bool>,
     url: Option<String>,
-    has_auth: bool,
+    header_count: usize,
     slug: String,
 ) -> impl IntoView {
     view! {
@@ -231,9 +231,9 @@ fn ServerConfigPanel(
                     </dd>
                 </div>
                 <div class="md:col-span-2">
-                    <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">"Authorization"</dt>
+                    <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">"Custom Headers"</dt>
                     <dd class="mt-1 text-sm text-gray-200">
-                        {if has_auth { "••••••••" } else { "None" }}
+                        {if header_count > 0 { format!("{header_count} header(s) configured") } else { "None".to_string() }}
                     </dd>
                 </div>
             </div>

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A configured upstream MCP server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9,7 +10,7 @@ pub struct McpServer {
     pub transport: ServerTransport,
     pub enabled: bool,
     pub url: Option<String>,
-    pub auth_header: Option<String>,
+    pub headers: HashMap<String, String>,
     pub created_at: String,
     pub updated_at: String,
 }

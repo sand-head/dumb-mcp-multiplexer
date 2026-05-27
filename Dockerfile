@@ -49,6 +49,12 @@ RUN cargo chef cook --release --no-default-features --features hydrate \
 # Copy full source and build
 COPY . .
 
+# Stamp the pipeline version into Cargo.toml so CARGO_PKG_VERSION is correct
+ARG APP_VERSION
+RUN if [ -n "$APP_VERSION" ]; then \
+        sed -i "s/^version = .*/version = \"$APP_VERSION\"/" Cargo.toml; \
+    fi
+
 RUN cargo leptos build --release -vv \
     && cp target/release/dumb-mcp-server-proxy /app/app-bin \
     && cp target/release/hash.txt /app/hash.txt \

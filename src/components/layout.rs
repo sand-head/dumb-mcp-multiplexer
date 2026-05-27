@@ -32,7 +32,7 @@ pub fn AppLayout(children: Children) -> impl IntoView {
             <footer class="border-t border-gray-800 py-4">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <p class="text-xs text-gray-500 text-center">
-                        "dumb-mcp-server-proxy v" env!("CARGO_PKG_VERSION") " · Aggregating MCP endpoint at "
+                        {concat!("dumb-mcp-server-proxy v", env!("CARGO_PKG_VERSION"), " \u{00b7} Aggregating MCP endpoint at ")}
                         <code class="text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded">"POST /mcp"</code>
                     </p>
                 </div>

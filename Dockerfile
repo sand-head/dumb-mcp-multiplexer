@@ -84,9 +84,10 @@ COPY --from=builder /app/Cargo.toml /app/
 RUN mkdir -p /data
 
 ENV RUST_LOG="info"
-ENV LEPTOS_SITE_ADDR="0.0.0.0:3000"
+ENV LEPTOS_SITE_ADDR="0.0.0.0:7899"
 ENV LEPTOS_SITE_ROOT="site"
+ENV LEPTOS_HASH_FILES="true"
 ENV DATABASE_URL="sqlite:/data/proxy.db?mode=rwc"
-EXPOSE 3000
+EXPOSE 7899
 
 CMD ["/app/server"]

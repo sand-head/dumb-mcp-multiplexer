@@ -8,6 +8,7 @@ use leptos_router::{
 use crate::components::layout::AppLayout;
 use crate::pages::dashboard::DashboardPage;
 use crate::pages::server_detail::ServerDetailPage;
+use crate::pages::settings::SettingsPage;
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -40,6 +41,11 @@ pub fn App() -> impl IntoView {
                 <Route path=StaticSegment("") view=|| view! {
                     <AppLayout>
                         <DashboardPage/>
+                    </AppLayout>
+                }/>
+                <Route path=StaticSegment("settings") view=|| view! {
+                    <AppLayout>
+                        <SettingsPage/>
                     </AppLayout>
                 }/>
                 <Route path=(StaticSegment("servers"), ParamSegment("slug")) view=|| view! {

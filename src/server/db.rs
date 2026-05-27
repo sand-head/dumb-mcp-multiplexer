@@ -172,6 +172,27 @@ pub async fn toggle_server_enabled(pool: &SqlitePool, id: &str) -> Result<bool, 
     Ok(row)
 }
 
+/// Get a setting value by key.
+pub async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+}
+
+/// Set a setting value (upsert).
+pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 // Internal row type for sqlx mapping
 #[derive(sqlx::FromRow)]
 struct ServerRow {

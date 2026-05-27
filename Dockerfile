@@ -51,6 +51,7 @@ COPY . .
 
 RUN cargo leptos build --release -vv \
     && cp target/release/dumb-mcp-server-proxy /app/app-bin \
+    && cp target/release/hash.txt /app/hash.txt \
     && cp -r target/site /app/site-out
 
 # --- Runtime: minimal image ---
@@ -64,8 +65,9 @@ RUN apt-get update -y \
 
 WORKDIR /app
 
-# Copy the server binary
+# Copy the server binary and hash file
 COPY --from=builder /app/app-bin /app/server
+COPY --from=builder /app/hash.txt /app/hash.txt
 
 # Copy the site bundle (JS/WASM/CSS)
 COPY --from=builder /app/site-out /app/site

@@ -10,16 +10,11 @@ services:
     cap_drop:
       - ALL
     ports:
-      - "7899:3000"
+      - "7899:7899"
     volumes:
       - proxy_data:/data:Z
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
-    environment:
-      - RUST_LOG=info
-      - LEPTOS_SITE_ADDR=0.0.0.0:3000
-      - LEPTOS_SITE_ROOT=site
-      - DATABASE_URL=sqlite:/data/proxy.db?mode=rwc
 
 volumes:
   proxy_data:

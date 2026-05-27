@@ -28,7 +28,7 @@ No intelligence, no filtering, no orchestration. It simply:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  AI Client (Claude, Cursor, etc.)                           │
-│  Connects to: POST http://proxy:3000/mcp                    │
+│  Connects to: POST http://proxy:7899/mcp                    │
 └────────────────────────┬────────────────────────────────────┘
                          │ MCP (Streamable HTTP)
                          ▼
@@ -496,10 +496,10 @@ COPY --from=builder /app/Cargo.toml /app/
 RUN mkdir -p /data
 
 ENV RUST_LOG="info"
-ENV LEPTOS_SITE_ADDR="0.0.0.0:3000"
+ENV LEPTOS_SITE_ADDR="0.0.0.0:7899"
 ENV LEPTOS_SITE_ROOT="site"
 ENV DATABASE_URL="sqlite:/data/proxy.db?mode=rwc"
-EXPOSE 3000
+EXPOSE 7899
 
 CMD ["/app/server"]
 ```
@@ -517,12 +517,12 @@ services:
     container_name: dumb-mcp-proxy
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      - '7899:7899'
     volumes:
       - proxy_data:/data
     environment:
       - RUST_LOG=info
-      - LEPTOS_SITE_ADDR=0.0.0.0:3000
+      - LEPTOS_SITE_ADDR=0.0.0.0:7899
       - DATABASE_URL=sqlite:/data/proxy.db?mode=rwc
 
 volumes:

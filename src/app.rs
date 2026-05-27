@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
+use leptos_meta::{provide_meta_context, HashedStylesheet, MetaTags, Title};
 use leptos_router::{
     components::{Route, Router, Routes},
     ParamSegment, StaticSegment,
@@ -17,8 +17,9 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta charset="utf-8"/>
                 <meta name="viewport" content="width=device-width, initial-scale=1"/>
                 <AutoReload options=options.clone() />
-                <HydrationScripts options/>
+                <HydrationScripts options=options.clone() />
                 <MetaTags/>
+                <HashedStylesheet options />
             </head>
             <body class="bg-gray-950 text-gray-100 min-h-screen">
                 <App/>
@@ -32,7 +33,6 @@ pub fn App() -> impl IntoView {
     provide_meta_context();
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/dumb-mcp-server-proxy.css"/>
         <Title text="MCP Proxy"/>
 
         <Router>

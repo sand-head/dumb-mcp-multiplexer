@@ -1,43 +1,59 @@
-# Build stage — Rust stable with cargo-leptos
-FROM rust:1-bookworm AS builder
+# --- Chef base: shared tooling for planner and builder ---
+FROM rust:1-bookworm AS chef
 
-# Install cargo-binstall for faster tool installation
-RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz \
-    && tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz \
+# Install cargo-binstall (arch-aware)
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+        "amd64") ARCH="x86_64" ;; \
+        "arm64") ARCH="aarch64" ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && wget "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-${ARCH}-unknown-linux-musl.tgz" \
+    && tar -xvf "cargo-binstall-${ARCH}-unknown-linux-musl.tgz" \
     && cp cargo-binstall /usr/local/cargo/bin \
-    && rm -rf cargo-binstall*
+    && rm -rf "cargo-binstall-${ARCH}-unknown-linux-musl.tgz" cargo-binstall
 
 # Install required system packages
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends clang lld \
     && rm -rf /var/lib/apt/lists/*
 
-# Install cargo-leptos
-RUN cargo binstall cargo-leptos -y
+# Install cargo-leptos and cargo-chef
+RUN cargo binstall cargo-leptos cargo-chef -y
 
 # Add the WASM target for client-side hydration
 RUN rustup target add wasm32-unknown-unknown
 
 WORKDIR /app
 
-# Pre-fetch dependencies (cached unless Cargo.toml/Cargo.lock change)
-COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && echo "" > src/lib.rs
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    cargo fetch
+# --- Planner: generate dependency recipe ---
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Copy full source
+# --- Builder: cook deps then build app ---
+FROM chef AS builder
+
+# Copy linker config so cook uses lld
+COPY .cargo .cargo
+
+COPY --from=planner /app/recipe.json recipe.json
+
+# Cook server dependencies (this layer is cached when deps don't change)
+RUN cargo chef cook --release --no-default-features --features ssr --recipe-path recipe.json
+
+# Cook WASM/client dependencies (also a cached layer)
+RUN cargo chef cook --release --no-default-features --features hydrate \
+    --target wasm32-unknown-unknown --recipe-path recipe.json
+
+# Copy full source and build
 COPY . .
 
-# Build both the SSR server binary and the WASM client bundle
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    cargo leptos build --release -vv \
+RUN cargo leptos build --release -vv \
     && cp target/release/dumb-mcp-server-proxy /app/app-bin \
     && cp -r target/site /app/site-out
 
-# Runtime stage — minimal image
+# --- Runtime: minimal image ---
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update -y \

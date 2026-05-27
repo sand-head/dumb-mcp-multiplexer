@@ -1,8 +1,6 @@
 services:
   proxy:
-    build:
-      context: .
-      target: runtime
+    image: ghcr.io/sand-head/dumb-mcp-server-proxy:latest
     container_name: dumb-mcp-proxy
     init: true
     restart: unless-stopped
@@ -12,7 +10,7 @@ services:
     cap_drop:
       - ALL
     ports:
-      - '3000:3000'
+      - "7899:3000"
     volumes:
       - proxy_data:/data
     tmpfs:

@@ -1,0 +1,27 @@
+services:
+  proxy:
+    build:
+      context: .
+      target: runtime
+    container_name: dumb-mcp-proxy
+    init: true
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - '3000:3000'
+    volumes:
+      - proxy_data:/data
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    environment:
+      - RUST_LOG=info
+      - LEPTOS_SITE_ADDR=0.0.0.0:3000
+      - LEPTOS_SITE_ROOT=site
+      - DATABASE_URL=sqlite:/data/proxy.db?mode=rwc
+
+volumes:
+  proxy_data:

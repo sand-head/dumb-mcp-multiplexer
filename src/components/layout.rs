@@ -1,0 +1,42 @@
+use leptos::prelude::*;
+
+#[component]
+pub fn AppLayout(children: Children) -> impl IntoView {
+    view! {
+        <div class="min-h-screen flex flex-col">
+            <header class="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex items-center justify-between h-16">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+                                <span class="text-white font-bold text-sm">"M"</span>
+                            </div>
+                            <h1 class="text-lg font-semibold text-gray-100">"MCP Proxy"</h1>
+                        </div>
+                        <nav class="flex items-center gap-4">
+                            <a href="/" class="text-sm text-gray-300 hover:text-white transition-colors">
+                                "Servers"
+                            </a>
+                            <a href="/settings" class="text-sm text-gray-400 hover:text-white transition-colors">
+                                "Settings"
+                            </a>
+                        </nav>
+                    </div>
+                </div>
+            </header>
+
+            <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+                {children()}
+            </main>
+
+            <footer class="border-t border-gray-800 py-4">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <p class="text-xs text-gray-500 text-center">
+                        "dumb-mcp-server-proxy · Aggregating MCP endpoint at "
+                        <code class="text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded">"POST /mcp"</code>
+                    </p>
+                </div>
+            </footer>
+        </div>
+    }
+}

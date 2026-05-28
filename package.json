@@ -1,7 +1,6 @@
 {
-  "name": "dumb-mcp-multiplexer",
-  "private": true,
-  "devDependencies": {
-    "@tailwindcss/cli": "^4.3.0"
+  "dependencies": {
+    "@tailwindcss/cli": "^4.1.18",
+    "tailwindcss": "^4.1.18"
   }
 }

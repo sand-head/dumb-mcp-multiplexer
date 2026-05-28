@@ -12,9 +12,14 @@ COPY DumbMcpMultiplexer.Client/DumbMcpMultiplexer.Client.csproj DumbMcpMultiplex
 
 RUN dotnet restore
 
-# Install Node.js for Tailwind CSS
-RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
+# Install Node.js 22 (required for Tailwind v4 build)
+RUN apt-get update \
+	&& apt-get install -y ca-certificates curl \
+	&& curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+	&& apt-get install -y nodejs \
+	&& rm -rf /var/lib/apt/lists/*
 
+# Copy npm manifest files for Tailwind install (cache-friendly)
 COPY package.json package-lock.json ./
 RUN npm ci
 

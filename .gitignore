@@ -17,7 +17,7 @@
 Thumbs.db
 
 # Node
-node_modules/
+**/node_modules/
 
 # Generated Tailwind output
 DumbMcpMultiplexer/wwwroot/app.css

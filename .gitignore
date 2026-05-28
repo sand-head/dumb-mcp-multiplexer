@@ -19,6 +19,9 @@ Thumbs.db
 # Tailwind standalone binary
 tailwindcss
 
+# Generated Tailwind output
+DumbMcpMultiplexer/wwwroot/app.css
+
 # .NET build outputs
 bin/
 obj/

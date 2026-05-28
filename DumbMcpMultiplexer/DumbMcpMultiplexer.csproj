@@ -8,7 +8,7 @@
     <TailwindCli Condition="'$(TailwindCli)' == ''">tailwindcss</TailwindCli>
   </PropertyGroup>
 
-  <Target Name="BuildTailwind" BeforeTargets="Build" Condition="Exists('$(TailwindCli)')">
+  <Target Name="BuildTailwind" BeforeTargets="Build">
     <Exec Command="$(TailwindCli) -i Styles/app.css -o wwwroot/app.css --minify" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 

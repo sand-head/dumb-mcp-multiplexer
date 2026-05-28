@@ -133,7 +133,7 @@
 
     private void ToggleProgressiveDiscovery(ChangeEventArgs e)
     {
-        _progressiveDiscovery = e.Value is true;
+        _progressiveDiscovery = (bool?)e.Value == true;
         ClearMessages();
     }
 

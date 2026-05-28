@@ -91,7 +91,9 @@ public class ProgressiveDiscoveryService
             .GroupBy(x => x.Slug, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Select(x => x.Name).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
 
-        var keywords = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var keywords = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(k => k.ToLowerInvariant())
+            .ToArray();
         var results = new List<object>();
 
         foreach (var (slug, client) in upstream.Connections)
@@ -109,7 +111,7 @@ public class ProgressiveDiscoveryService
 
                     // Match against tool name and description
                     var searchText = $"{tool.Name} {tool.Description}".ToLowerInvariant();
-                    var matches = keywords.Length == 0 || keywords.Any(k => searchText.Contains(k.ToLowerInvariant()));
+                    var matches = keywords.Length == 0 || keywords.Any(k => searchText.Contains(k));
 
                     if (matches)
                     {

@@ -1,5 +1,5 @@
 [package]
-name = "dumb-mcp-server-proxy"
+name = "dumb-mcp-multiplexer"
 version = "0.1.0"
 edition = "2021"
 
@@ -68,7 +68,7 @@ codegen-units = 1
 panic = "abort"
 
 [package.metadata.leptos]
-output-name = "dumb-mcp-server-proxy"
+output-name = "dumb-mcp-multiplexer"
 site-root = "target/site"
 hash-files = true
 site-pkg-dir = "pkg"

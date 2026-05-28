@@ -2,8 +2,8 @@
 #[tokio::main]
 async fn main() {
     use axum::{middleware, Router};
-    use dumb_mcp_server_proxy::app::*;
-    use dumb_mcp_server_proxy::server::{
+    use dumb_mcp_multiplexer::app::*;
+    use dumb_mcp_multiplexer::server::{
         db, proxy_handler::ProxyHandler, upstream::UpstreamManager, AllowedHosts,
     };
     use leptos::prelude::*;
@@ -41,7 +41,7 @@ async fn main() {
         .filter(|h| !h.is_empty())
         .collect();
     let allowed_hosts: AllowedHosts = Arc::new(RwLock::new(initial_hosts));
-    dumb_mcp_server_proxy::server::init_allowed_hosts(allowed_hosts.clone());
+    dumb_mcp_multiplexer::server::init_allowed_hosts(allowed_hosts.clone());
 
     // Leptos configuration
     let conf = get_configuration(Some("Cargo.toml")).unwrap();
@@ -49,7 +49,7 @@ async fn main() {
     let leptos_options = conf.leptos_options;
 
     // Build application state
-    let app_state = dumb_mcp_server_proxy::server::AppState {
+    let app_state = dumb_mcp_multiplexer::server::AppState {
         pool: pool.clone(),
         upstream: upstream.clone(),
         leptos_options: leptos_options.clone(),
@@ -82,7 +82,7 @@ async fn main() {
             move || shell(leptos_options.clone())
         })
         .fallback(leptos_axum::file_and_error_handler::<
-            dumb_mcp_server_proxy::server::AppState,
+            dumb_mcp_multiplexer::server::AppState,
             _,
         >(shell))
         .with_state(app_state);
@@ -153,7 +153,7 @@ async fn host_guard(
         .trim_matches(|c| c == '[' || c == ']')
         .to_ascii_lowercase();
 
-    let allowed_hosts = dumb_mcp_server_proxy::server::allowed_hosts();
+    let allowed_hosts = dumb_mcp_multiplexer::server::allowed_hosts();
     let hosts = allowed_hosts.read().await;
 
     // If the list is empty, only allow loopback (default safe behavior)

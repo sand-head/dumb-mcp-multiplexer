@@ -1,4 +1,4 @@
-# dumb-mcp-server-proxy — Design Plan
+# dumb-mcp-multiplexer — Design Plan
 
 ## Overview
 
@@ -33,7 +33,7 @@ No intelligence, no filtering, no orchestration. It simply:
                          │ MCP (Streamable HTTP)
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  dumb-mcp-server-proxy                                      │
+│  dumb-mcp-multiplexer                                      │
 │                                                             │
 │  ┌─────────────────┐   ┌─────────────────────────────────┐ │
 │  │  Web UI (Leptos) │   │  MCP Proxy Endpoint (/mcp)      │ │
@@ -192,7 +192,7 @@ CREATE TABLE settings (
 ## Project Structure
 
 ```
-dumb-mcp-server-proxy/
+dumb-mcp-multiplexer/
 ├── Cargo.toml
 ├── Cargo.lock
 ├── Dockerfile
@@ -478,7 +478,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo leptos build --release -vv \
-    && cp target/release/dumb-mcp-server-proxy /app/app-bin \
+    && cp target/release/dumb-mcp-multiplexer /app/app-bin \
     && cp -r target/site /app/site-out
 
 # Stage 2: Minimal runtime

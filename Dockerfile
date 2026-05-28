@@ -56,7 +56,7 @@ RUN if [ -n "$APP_VERSION" ]; then \
     fi
 
 RUN cargo leptos build --release -vv \
-    && cp target/release/dumb-mcp-server-proxy /app/app-bin \
+    && cp target/release/dumb-mcp-multiplexer /app/app-bin \
     && cp target/release/hash.txt /app/hash.txt \
     && cp -r target/site /app/site-out
 

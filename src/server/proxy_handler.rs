@@ -24,7 +24,7 @@ impl ServerHandler for ProxyHandler {
             "MCP Proxy — aggregates tools, resources, and prompts from multiple upstream MCP servers."
                 .into(),
         );
-        info.server_info = Implementation::new("dumb-mcp-server-proxy", env!("CARGO_PKG_VERSION"));
+        info.server_info = Implementation::new("dumb-mcp-multiplexer", env!("CARGO_PKG_VERSION"));
         info.capabilities = ServerCapabilities::builder()
             .enable_tools()
             .enable_resources()

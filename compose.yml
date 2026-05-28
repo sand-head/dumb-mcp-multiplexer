@@ -1,6 +1,6 @@
 services:
   proxy:
-    image: ghcr.io/sand-head/dumb-mcp-server-proxy:latest
+    image: ghcr.io/sand-head/dumb-mcp-multiplexer:latest
     container_name: dumb-mcp-proxy
     init: true
     restart: unless-stopped

@@ -40,6 +40,13 @@ builder.Services.AddMcpServer(options =>
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+
+    // If progressive discovery is enabled, return only the meta-tools
+    if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct))
+    {
+        return new ListToolsResult { Tools = ProgressiveDiscoveryService.GetMetaTools().ToList() };
+    }
+
     var tools = new List<Tool>();
     var connectedSlugs = upstream.Connections.Keys.ToList();
 
@@ -83,8 +90,23 @@ builder.Services.AddMcpServer(options =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
     var db = request.Services!.GetRequiredService<AppDbContext>();
+    var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+    var toolName = request.Params?.Name ?? "";
 
-    var split = Namespace.Split(request.Params?.Name ?? "");
+    // Handle progressive discovery meta-tools
+    if (toolName == ProgressiveDiscoveryService.SearchToolName)
+    {
+        var query = request.Params?.Arguments?.TryGetValue("query", out var q) == true ? q.ToString() : "";
+        var server = request.Params?.Arguments?.TryGetValue("server", out var s) == true ? s.ToString() : null;
+        return await ProgressiveDiscoveryService.HandleSearchToolsAsync(upstream, db, query, server, logger, ct);
+    }
+
+    if (toolName == ProgressiveDiscoveryService.ListCategoriesToolName)
+    {
+        return await ProgressiveDiscoveryService.HandleListCategoriesAsync(upstream, logger, ct);
+    }
+
+    var split = Namespace.Split(toolName);
     if (split is null)
     {
         throw new McpProtocolException(

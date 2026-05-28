@@ -44,7 +44,7 @@ async fn main() {
     dumb_mcp_server_proxy::server::init_allowed_hosts(allowed_hosts.clone());
 
     // Leptos configuration
-    let conf = get_configuration(None).unwrap();
+    let conf = get_configuration(Some("Cargo.toml")).unwrap();
     let addr = conf.leptos_options.site_addr;
     let leptos_options = conf.leptos_options;
 
@@ -72,8 +72,8 @@ async fn main() {
     );
 
     // Build the router:
-    // 1. MCP proxy at /mcp (with dynamic host validation middleware)
-    // 2. Leptos SSR routes (web UI)
+    // 1. MCP proxy at /mcp — host guard applied inside the middleware itself
+    // 2. Leptos SSR routes (web UI) — no host guard, always accessible
     let app = Router::new()
         .nest_service("/mcp", mcp_service)
         .layer(middleware::from_fn(host_guard))
@@ -91,17 +91,54 @@ async fn main() {
     tracing::info!("MCP endpoint available at POST http://{}/mcp", &addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
+    tracing::info!("Server shut down gracefully");
+}
+
+/// Waits for SIGTERM (Docker stop) or SIGINT (Ctrl-C) and returns.
+/// This gives axum the signal it needs to drain connections before exiting.
+#[cfg(feature = "ssr")]
+async fn shutdown_signal() {
+    use tokio::signal;
+
+    let sigint = async {
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install SIGINT handler");
+    };
+
+    #[cfg(unix)]
+    let sigterm = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let sigterm = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = sigint => { tracing::info!("Received SIGINT, shutting down..."); },
+        _ = sigterm => { tracing::info!("Received SIGTERM, shutting down..."); },
+    }
 }
 
 /// Middleware that validates the Host header against the dynamic allowed-hosts list.
-/// Applied only to the /mcp route via layering.
+/// Only enforced for requests to /mcp — the web UI is always reachable so users
+/// can configure allowed hosts before the MCP endpoint is usable.
 #[cfg(feature = "ssr")]
 async fn host_guard(
     req: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
+    // Only enforce host checking on the MCP endpoint.
+    if !req.uri().path().starts_with("/mcp") {
+        return next.run(req).await;
+    }
+
     let host = req
         .headers()
         .get(axum::http::header::HOST)

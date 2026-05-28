@@ -33,12 +33,15 @@ pub async fn save_allowed_hosts(hosts: String) -> Result<(), ServerFnError> {
     Ok(())
 }
 
+#[derive(Clone, Debug)]
+struct HostEntry {
+    id: u32,
+    value: RwSignal<String>,
+}
+
 #[component]
 pub fn SettingsPage() -> impl IntoView {
     let hosts_resource = Resource::new(|| (), |_| get_allowed_hosts());
-    let (saving, set_saving) = signal(false);
-    let (error, set_error) = signal(Option::<String>::None);
-    let (success, set_success) = signal(false);
 
     view! {
         <div>
@@ -50,7 +53,7 @@ pub fn SettingsPage() -> impl IntoView {
             <Suspense fallback=move || view! { <div class="text-gray-400">"Loading..."</div> }>
                 {move || Suspend::new(async move {
                     let current_hosts = hosts_resource.await.unwrap_or_default();
-                    view! { <SettingsForm initial_hosts=current_hosts saving set_saving error set_error success set_success /> }
+                    view! { <SettingsForm initial_hosts=current_hosts /> }
                 })}
             </Suspense>
         </div>
@@ -58,16 +61,38 @@ pub fn SettingsPage() -> impl IntoView {
 }
 
 #[component]
-fn SettingsForm(
-    initial_hosts: String,
-    saving: ReadSignal<bool>,
-    set_saving: WriteSignal<bool>,
-    error: ReadSignal<Option<String>>,
-    set_error: WriteSignal<Option<String>>,
-    success: ReadSignal<bool>,
-    set_success: WriteSignal<bool>,
-) -> impl IntoView {
-    let (hosts, set_hosts) = signal(initial_hosts);
+fn SettingsForm(initial_hosts: String) -> impl IntoView {
+    let initial_entries: Vec<HostEntry> = initial_hosts
+        .split(',')
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
+        .enumerate()
+        .map(|(i, h)| HostEntry {
+            id: i as u32,
+            value: RwSignal::new(h),
+        })
+        .collect();
+
+    let (next_id, set_next_id) = signal(initial_entries.len() as u32);
+    let (entries, set_entries) = signal(initial_entries);
+    let (saving, set_saving) = signal(false);
+    let (error, set_error) = signal(Option::<String>::None);
+    let (success, set_success) = signal(false);
+
+    let add_entry = move |_: leptos::ev::MouseEvent| {
+        let id = next_id.get_untracked();
+        set_next_id.set(id + 1);
+        set_entries.update(|e| {
+            e.push(HostEntry {
+                id,
+                value: RwSignal::new(String::new()),
+            });
+        });
+    };
+
+    let remove_entry = move |id: u32| {
+        set_entries.update(|e| e.retain(|entry| entry.id != id));
+    };
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -75,7 +100,13 @@ fn SettingsForm(
         set_success.set(false);
         set_saving.set(true);
 
-        let hosts_val = hosts.get_untracked();
+        let hosts_val = entries
+            .get_untracked()
+            .iter()
+            .map(|e| e.value.get_untracked())
+            .filter(|h| !h.is_empty())
+            .collect::<Vec<_>>()
+            .join(",");
 
         leptos::task::spawn_local(async move {
             match save_allowed_hosts(hosts_val).await {
@@ -89,21 +120,48 @@ fn SettingsForm(
     view! {
         <form on:submit=on_submit class="space-y-6">
             <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-                <h3 class="text-lg font-medium text-white mb-1">"Allowed Hosts"</h3>
+                <div class="flex items-center justify-between mb-1">
+                    <h3 class="text-lg font-medium text-white">"Allowed Hosts"</h3>
+                    <button
+                        type="button"
+                        on:click=add_entry
+                        class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                        "+ Add Host"
+                    </button>
+                </div>
                 <p class="text-sm text-gray-400 mb-4">
-                    "Hostnames allowed to access the MCP endpoint. This protects against DNS rebinding attacks. "
-                    "Comma-separated list (e.g. "
-                    <code class="text-gray-300 bg-gray-800 px-1 py-0.5 rounded text-xs">"mcps.example.com, localhost"</code>
-                    ")."
+                    "Hostnames permitted to reach the MCP endpoint, guarding against DNS rebinding attacks. "
+                    "Loopback addresses are always allowed."
                 </p>
-                <input
-                    type="text"
-                    prop:value=hosts
-                    on:input=move |ev| set_hosts.set(event_target_value(&ev))
-                    placeholder="localhost, 127.0.0.1, mcps.example.com"
-                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
-                />
-                <p class="text-xs text-gray-500 mt-2">"Leave empty to allow only localhost (default). Changes take effect immediately."</p>
+                <div class="space-y-2">
+                    {move || {
+                        entries.get().into_iter().map(|entry| {
+                            let entry_id = entry.id;
+                            view! {
+                                <div class="flex gap-2 items-center">
+                                    <input
+                                        type="text"
+                                        prop:value=entry.value
+                                        on:input=move |ev| entry.value.set(event_target_value(&ev))
+                                        placeholder="mcps.example.com"
+                                        class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                    />
+                                    <button
+                                        type="button"
+                                        on:click=move |_| remove_entry(entry_id)
+                                        class="text-gray-500 hover:text-red-400 transition-colors px-1"
+                                    >
+                                        "✕"
+                                    </button>
+                                </div>
+                            }
+                        }).collect::<Vec<_>>()
+                    }}
+                </div>
+                {move || entries.get().is_empty().then(|| view! {
+                    <p class="text-sm text-gray-600 italic">"No additional hosts configured — only loopback is allowed."</p>
+                })}
             </div>
 
             {move || error.get().map(|e| view! {
@@ -114,7 +172,7 @@ fn SettingsForm(
 
             {move || success.get().then(|| view! {
                 <div class="bg-emerald-900/30 border border-emerald-800 text-emerald-300 text-sm rounded-lg px-4 py-2">
-                    "Settings saved successfully."
+                    "Settings saved."
                 </div>
             })}
 

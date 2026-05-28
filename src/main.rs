@@ -15,9 +15,20 @@ async fn main() {
     use tokio::sync::RwLock;
     use tracing_subscriber::EnvFilter;
 
-    // Initialize tracing
+    // Initialize tracing.
+    // Suppress the noisy SSE reconnection warnings from rmcp. Some upstream
+    // servers send SSE keepalive lines that the sse-stream parser doesn't
+    // recognise, triggering an endless warn → reconnect → warn loop.
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
+        .with_env_filter(
+            EnvFilter::from_default_env()
+                .add_directive("info".parse().unwrap())
+                .add_directive(
+                    "rmcp::transport::common::client_side_sse=error"
+                        .parse()
+                        .unwrap(),
+                ),
+        )
         .init();
 
     // Initialize database

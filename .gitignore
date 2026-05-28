@@ -16,8 +16,8 @@
 .DS_Store
 Thumbs.db
 
-# Tailwind standalone binary
-tailwindcss
+# Node
+node_modules/
 
 # Generated Tailwind output
 DumbMcpMultiplexer/wwwroot/app.css

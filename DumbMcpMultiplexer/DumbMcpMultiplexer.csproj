@@ -5,11 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <TailwindCli Condition="'$(TailwindCli)' == ''">tailwindcss</TailwindCli>
+    <TailwindCli Condition="'$(TailwindCli)' == ''">npx @tailwindcss/cli</TailwindCli>
   </PropertyGroup>
 
   <Target Name="BuildTailwind" BeforeTargets="Build">
-    <Exec Command="$(TailwindCli) -i Styles/app.css -o wwwroot/app.css --minify" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="$(TailwindCli) -i DumbMcpMultiplexer/Styles/app.css -o DumbMcpMultiplexer/wwwroot/app.css --minify" WorkingDirectory="$(MSBuildProjectDirectory)/.." />
   </Target>
 
   <ItemGroup>

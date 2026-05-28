@@ -2,6 +2,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 ARG APP_VERSION
+ARG TARGETARCH
 
 WORKDIR /src
 
@@ -11,19 +12,19 @@ COPY DumbMcpMultiplexer.Client/DumbMcpMultiplexer.Client.csproj DumbMcpMultiplex
 
 RUN dotnet restore
 
-COPY . .
+# Install Node.js for Tailwind CSS
+RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
 
-# Download Tailwind CSS standalone CLI for the build
-ARG TARGETARCH
-RUN TAILWIND_ARCH=$(case "$TARGETARCH" in arm64) echo "arm64" ;; *) echo "x64" ;; esac) && \
-    wget -qO /usr/local/bin/tailwindcss "https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-${TAILWIND_ARCH}" && \
-    chmod +x /usr/local/bin/tailwindcss
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
 
 RUN DOTNET_RID=$(case "$TARGETARCH" in arm64) echo "linux-arm64" ;; *) echo "linux-x64" ;; esac) && \
     if [ -n "$APP_VERSION" ]; then \
-      dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -r $DOTNET_RID -o /app/publish /p:Version=$APP_VERSION /p:TailwindCli=/usr/local/bin/tailwindcss; \
+      dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -r $DOTNET_RID -o /app/publish /p:Version=$APP_VERSION; \
     else \
-      dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -r $DOTNET_RID -o /app/publish /p:TailwindCli=/usr/local/bin/tailwindcss; \
+      dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -r $DOTNET_RID -o /app/publish; \
     fi
 
 # Runtime stage

@@ -42,6 +42,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.ServerId).HasColumnName("server_id");
             entity.Property(e => e.Kind).HasColumnName("kind");
             entity.Property(e => e.Name).HasColumnName("name");
+            entity.Property(e => e.Enabled).HasColumnName("enabled").IsRequired().HasDefaultValue(true);
             entity.Property(e => e.Description).HasColumnName("description");
             entity.Property(e => e.SchemaJson).HasColumnName("schema_json");
             entity.Property(e => e.FetchedAt).HasColumnName("fetched_at").IsRequired();

@@ -6,6 +6,8 @@ namespace DumbMcpMultiplexer.Services;
 
 public class ServerService(AppDbContext db)
 {
+    private const string ToolCapabilityKind = ServerCapability.ToolKind;
+
     public async Task<List<McpServer>> GetAllServersAsync()
     {
         return await db.Servers.OrderBy(s => s.Name).ToListAsync();
@@ -83,6 +85,63 @@ public class ServerService(AppDbContext db)
     public async Task<bool> SlugExistsAsync(string slug, string? excludeId = null)
     {
         return await db.Servers.AnyAsync(s => s.Slug == slug && (excludeId == null || s.Id != excludeId));
+    }
+
+    public async Task<List<ServerCapability>> GetToolCapabilitiesAsync(string serverId)
+    {
+        return await db.ServerCapabilities
+            .Where(c => c.ServerId == serverId && c.Kind == ToolCapabilityKind)
+            .OrderBy(c => c.Name)
+            .ToListAsync();
+    }
+
+    public async Task SyncToolCapabilitiesAsync(string serverId, IEnumerable<(string Name, string? Description, string? SchemaJson)> tools)
+    {
+        var incomingTools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
+        var existingTools = await db.ServerCapabilities
+            .Where(c => c.ServerId == serverId && c.Kind == ToolCapabilityKind)
+            .ToListAsync();
+
+        foreach (var existing in existingTools.Where(c => !incomingTools.ContainsKey(c.Name)))
+        {
+            db.ServerCapabilities.Remove(existing);
+        }
+
+        foreach (var incoming in incomingTools.Values)
+        {
+            var existing = existingTools.FirstOrDefault(c => c.Name == incoming.Name);
+            if (existing is null)
+            {
+                db.ServerCapabilities.Add(new ServerCapability
+                {
+                    ServerId = serverId,
+                    Kind = ToolCapabilityKind,
+                    Name = incoming.Name,
+                    Enabled = true,
+                    Description = incoming.Description,
+                    SchemaJson = incoming.SchemaJson,
+                    FetchedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                existing.Description = incoming.Description;
+                existing.SchemaJson = incoming.SchemaJson;
+                existing.FetchedAt = DateTime.UtcNow;
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    public async Task ToggleToolCapabilityEnabledAsync(string serverId, string toolName)
+    {
+        var capability = await db.ServerCapabilities.FirstOrDefaultAsync(c =>
+            c.ServerId == serverId && c.Kind == ToolCapabilityKind && c.Name == toolName)
+            ?? throw new InvalidOperationException($"Tool capability '{toolName}' not found for server '{serverId}'");
+
+        capability.Enabled = !capability.Enabled;
+        await db.SaveChangesAsync();
     }
 
     // Settings helpers

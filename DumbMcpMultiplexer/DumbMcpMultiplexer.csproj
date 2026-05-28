@@ -5,7 +5,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
     <TailwindCli Condition="'$(TailwindCli)' == ''">tailwindcss</TailwindCli>
   </PropertyGroup>
 

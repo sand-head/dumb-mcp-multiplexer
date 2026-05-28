@@ -19,10 +19,11 @@ RUN TAILWIND_ARCH=$(case "$TARGETARCH" in arm64) echo "arm64" ;; *) echo "x64" ;
     wget -qO /usr/local/bin/tailwindcss "https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-${TAILWIND_ARCH}" && \
     chmod +x /usr/local/bin/tailwindcss
 
-RUN if [ -n "$APP_VERSION" ]; then \
-      dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -o /app/publish /p:Version=$APP_VERSION /p:TailwindCli=/usr/local/bin/tailwindcss; \
+RUN DOTNET_RID=$(case "$TARGETARCH" in arm64) echo "linux-arm64" ;; *) echo "linux-x64" ;; esac) && \
+    if [ -n "$APP_VERSION" ]; then \
+      dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -r $DOTNET_RID -o /app/publish /p:Version=$APP_VERSION /p:TailwindCli=/usr/local/bin/tailwindcss; \
     else \
-      dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -o /app/publish /p:TailwindCli=/usr/local/bin/tailwindcss; \
+      dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -r $DOTNET_RID -o /app/publish /p:TailwindCli=/usr/local/bin/tailwindcss; \
     fi
 
 # Runtime stage

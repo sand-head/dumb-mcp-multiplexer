@@ -1,0 +1,9 @@
+/home/sand_head/Source/Repos/sand-head/dumb-mcp-server-proxy/_legacy-rust/target/debug/deps/futures_executor-ad0073a4020cbfde.d: /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/lib.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/local_pool.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/thread_pool.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/unpark_mutex.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/enter.rs
+
+/home/sand_head/Source/Repos/sand-head/dumb-mcp-server-proxy/_legacy-rust/target/debug/deps/libfutures_executor-ad0073a4020cbfde.rmeta: /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/lib.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/local_pool.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/thread_pool.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/unpark_mutex.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/enter.rs
+
+/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/lib.rs:
+/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/local_pool.rs:
+/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/thread_pool.rs:
+/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/unpark_mutex.rs:
+/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.32/src/enter.rs:

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Docker-containerized **Leptos + Axum** SSR web app that:
+A Docker-containerized web app that:
 
 1. Provides a web UI for configuring multiple upstream MCP (Model Context Protocol) servers
 2. Exposes a **single MCP-compliant endpoint** that aggregates and proxies all configured backends
@@ -10,6 +10,12 @@ A Docker-containerized **Leptos + Axum** SSR web app that:
 
 Think of it as an MCP multiplexer — your AI client connects to one endpoint and gets
 tools/resources/prompts from all your configured MCP servers merged together.
+
+> **Status**: Rewriting from Rust (Leptos + Axum + rmcp) to **C# / ASP.NET Core 10 + Blazor Web App**.
+> The Rust implementation hit stability issues with the `rmcp` crate's SSE client
+> (infinite reconnection loops on upstream keepalive messages, immature error handling).
+> The new stack uses the official Microsoft `ModelContextProtocol` C# SDK which is
+> actively maintained and battle-tested against real-world MCP servers.
 
 ---
 
@@ -101,7 +107,34 @@ the "github" backend.
 
 ---
 
-## Tech Stack
+## Tech Stack (C# Rewrite)
+
+| Layer | Technology | Rationale |
+|-------|-----------|----------|
+| Framework | **ASP.NET Core 10** | Mature, performant, excellent HTTP/SSE support |
+| Web UI | **Blazor Web App** (Interactive SSR) | Rich UI with C# instead of JS, server & WASM render modes |
+| MCP SDK | **ModelContextProtocol** (official C# SDK) | Microsoft-maintained, tested against real MCP servers |
+| Styling | **Tailwind CSS** | Same design language as existing UI |
+| Database | **SQLite** (via EF Core or Dapper) | Config persistence, single-file, same schema |
+| Container | **Docker** (multi-stage) | `dotnet publish` → small runtime image |
+
+### Key NuGet Packages
+
+```xml
+<PackageReference Include="ModelContextProtocol" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+```
+
+**What the C# MCP SDK gives us:**
+- MCP server hosting via ASP.NET Core middleware (Streamable HTTP + SSE)
+- MCP client for connecting to upstream servers
+- All protocol types (Tool, Resource, Prompt, capabilities, etc.)
+- Proper SSE keepalive handling (no parser crashes on comment lines)
+- Built-in session management
+
+---
+
+## Tech Stack (Original Rust — Deprecated)
 
 | Layer | Technology | Rationale |
 |-------|-----------|----------|
@@ -531,7 +564,10 @@ volumes:
 
 ---
 
-## Implementation Phases
+## Implementation Phases (Original Rust — Deprecated)
+
+> These phases are complete or abandoned. Retained for reference during the C# rewrite.
+> The original Rust source lives in [`_legacy-rust/`](./_legacy-rust/).
 
 ### Phase 1: Skeleton (get it running) ✅
 
@@ -581,6 +617,112 @@ volumes:
 
 ---
 
+## C# Rewrite — Implementation Phases
+
+### Phase R1: Project Scaffold ✅
+
+- [x] Create .NET 10 solution with Blazor Web App project (Interactive Auto: Server + WebAssembly)
+- [x] SQLite setup with EF Core (same schema: `servers`, `server_capabilities`, `settings` tables)
+- [x] Migrations matching existing schema (auto-applied on startup)
+- [x] Dockerfile (multi-stage: `dotnet publish` → `mcr.microsoft.com/dotnet/aspnet:10.0` runtime)
+- [x] compose.yml (same port mapping, volume for `/data/proxy.db`, security-hardened)
+- [x] Tailwind CSS integration (standalone CLI via MSBuild target, downloaded in Docker build)
+
+### Phase R2: Web UI (port from Leptos) ✅
+
+- [x] Dashboard page — server list with status indicators (responsive grid)
+- [x] Add/edit/delete server form (modal, same validation rules)
+- [x] Enable/disable toggle
+- [x] Server detail page (`/servers/{slug}`) with config display + namespace prefix
+- [x] Settings page (allowed hosts configuration, dynamic list)
+- [x] "Test Connection" button (real MCP handshake via UpstreamManager)
+- [x] Dark theme matching original Rust UI (Tailwind classes)
+
+### Phase R3: MCP Proxy Core ✅
+
+- [x] MCP server endpoint at `/mcp` using `ModelContextProtocol.AspNetCore` SDK v1.3.0
+  - [x] Streamable HTTP transport (via `MapMcp("/mcp")`)
+  - [x] Session management (handled by SDK)
+- [x] Upstream connection manager (`UpstreamManager` — singleton, `ConcurrentDictionary<string, McpClient>`)
+  - [x] Connect/disconnect lifecycle
+  - [x] Auto-sync on startup + after server add/edit/toggle/delete
+  - [x] Test connection without persisting
+- [x] `tools/list` aggregation with namespace prefixing (`slug__toolname`)
+- [x] `tools/call` routing by namespace prefix
+- [x] `resources/list` + `resources/read` (same pattern, `proxy://slug/uri` scheme)
+- [x] `prompts/list` + `prompts/get` (same pattern)
+- [x] Host guard middleware (same logic: allowed hosts for `/mcp`, web UI always open)
+
+### Phase R4: Polish & Observability
+
+- [ ] Capability discovery + caching
+- [ ] Status badges (last successful contact, error state)
+- [ ] Error isolation (partial results when a backend is down)
+- [ ] Structured logging (Serilog or built-in ILogger)
+- [ ] Health check endpoint (`/health`)
+
+### Phase R5 (Future): Stdio MCP Servers
+
+- [ ] Upstream connections via `Process` (stdin/stdout transport)
+- [ ] Process lifecycle management (start/stop/restart)
+- [ ] UI fields for command, arguments, environment variables
+- [ ] Same `McpClient` base class regardless of transport type
+
+---
+
+## C# Rewrite — Project Structure
+
+```
+dumb-mcp-multiplexer/
+├── DumbMcpMultiplexer.slnx          # .NET 10 XML solution file
+├── Dockerfile                       # Multi-stage: SDK build → aspnet runtime
+├── compose.yml                      # Docker Compose (port 7899, /data volume)
+├── .dockerignore
+├── PLAN.md
+│
+├── DumbMcpMultiplexer/              # Server project (ASP.NET Core + Blazor)
+│   ├── Program.cs                   # Host builder, MCP handlers, middleware, DI
+│   ├── DumbMcpMultiplexer.csproj
+│   ├── Components/
+│   │   ├── App.razor
+│   │   ├── Routes.razor
+│   │   ├── _Imports.razor
+│   │   ├── Pages/
+│   │   │   ├── Dashboard.razor      # Server grid, add modal
+│   │   │   ├── ServerDetail.razor   # Config view, edit/delete/toggle
+│   │   │   └── Settings.razor       # Allowed hosts configuration
+│   │   ├── Layout/
+│   │   │   └── MainLayout.razor     # Dark theme shell (header, nav, footer)
+│   │   └── Shared/
+│   │       └── ServerForm.razor     # Add/edit server modal form
+│   ├── Services/
+│   │   ├── UpstreamManager.cs       # Manages MCP client connections (singleton)
+│   │   ├── ServerService.cs         # EF Core CRUD operations
+│   │   └── Namespace.cs            # slug__name prefixing + proxy:// URI scheme
+│   ├── Models/
+│   │   ├── McpServer.cs
+│   │   ├── ServerCapability.cs
+│   │   └── AppSetting.cs
+│   ├── Data/
+│   │   ├── AppDbContext.cs
+│   │   └── Migrations/
+│   ├── Middleware/
+│   │   └── HostGuardMiddleware.cs   # Host header validation for /mcp
+│   ├── Styles/
+│   │   └── app.css                  # Tailwind v4 input (@import "tailwindcss")
+│   └── wwwroot/
+│       └── app.css                  # Compiled Tailwind output
+│
+├── DumbMcpMultiplexer.Client/       # WebAssembly client project
+│   ├── DumbMcpMultiplexer.Client.csproj
+│   ├── Program.cs
+│   └── _Imports.razor
+│
+└── _legacy-rust/                    # Original Rust implementation (archived)
+```
+
+---
+
 ## Open Questions / Decisions to Make Later
 
 1. **Auth header storage**: Store plain text in SQLite for now? Or encrypt at rest
@@ -609,7 +751,19 @@ volumes:
 
 ## References
 
+### C# / .NET
+
+- [ModelContextProtocol C# SDK](https://github.com/modelcontextprotocol/csharp-sdk) — official Microsoft-maintained SDK
+- [ASP.NET Core docs](https://learn.microsoft.com/en-us/aspnet/core/)
+- [Blazor docs](https://learn.microsoft.com/en-us/aspnet/core/blazor/)
+- [EF Core SQLite provider](https://learn.microsoft.com/en-us/ef/core/providers/sqlite/)
+
+### General
+
 - [MCP Specification](https://modelcontextprotocol.io/specification/2025-11-25)
+
+### Rust (original, for reference)
+
 - [rmcp — Official Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk) (v1.7)
 - [rmcp docs.rs](https://docs.rs/rmcp/latest/rmcp)
 - [Leptos Book](https://book.leptos.dev/)

@@ -1,6 +1,8 @@
 services:
   proxy:
-    image: ghcr.io/sand-head/dumb-mcp-multiplexer:latest
+    build:
+      context: .
+      target: runtime
     container_name: dumb-mcp-proxy
     init: true
     restart: unless-stopped
@@ -10,11 +12,13 @@ services:
     cap_drop:
       - ALL
     ports:
-      - "7899:7899"
+      - "0.0.0.0:7899:7899"
     volumes:
       - proxy_data:/data:Z
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
+    environment:
+      - ConnectionStrings__DefaultConnection=Data Source=/data/proxy.db
 
 volumes:
   proxy_data:

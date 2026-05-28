@@ -1,6 +1,9 @@
-target/
-*.db
-*.db-shm
-*.db-wal
-node_modules/
-.git/
+**/.git
+**/bin
+**/obj
+**/target
+**/_legacy-rust
+**/node_modules
+**/.idea
+**/.vscode
+*.md

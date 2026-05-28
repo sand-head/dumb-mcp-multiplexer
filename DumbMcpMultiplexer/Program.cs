@@ -1,0 +1,240 @@
+using DumbMcpMultiplexer.Components;
+using DumbMcpMultiplexer.Data;
+using DumbMcpMultiplexer.Middleware;
+using DumbMcpMultiplexer.Services;
+using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? "Data Source=app.db"));
+
+builder.Services.AddScoped<ServerService>();
+builder.Services.AddSingleton<UpstreamManager>();
+
+// Configure the MCP server with Streamable HTTP transport.
+// We use custom handlers to dynamically aggregate tools/resources/prompts from upstream servers.
+builder.Services.AddMcpServer(options =>
+{
+    options.ServerInfo = new Implementation
+    {
+        Name = "dumb-mcp-multiplexer",
+        Version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.1"
+    };
+    options.Capabilities = new ServerCapabilities
+    {
+        Tools = new ToolsCapability(),
+        Resources = new ResourcesCapability(),
+        Prompts = new PromptsCapability()
+    };
+})
+.WithHttpTransport()
+.WithListToolsHandler(async (request, ct) =>
+{
+    var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+    var tools = new List<Tool>();
+
+    foreach (var (slug, client) in upstream.Connections)
+    {
+        try
+        {
+            var upstreamTools = await client.ListToolsAsync(cancellationToken: ct);
+            foreach (var tool in upstreamTools)
+            {
+                tools.Add(new Tool
+                {
+                    Name = Namespace.Prefix(slug, tool.Name),
+                    Description = tool.Description,
+                    InputSchema = tool.JsonSchema
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to list tools from upstream: {Slug}", slug);
+        }
+    }
+
+    return new ListToolsResult { Tools = tools };
+})
+.WithCallToolHandler(async (request, ct) =>
+{
+    var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+
+    var split = Namespace.Split(request.Params?.Name ?? "");
+    if (split is null)
+    {
+        throw new McpProtocolException(
+            $"Tool name '{request.Params?.Name}' is missing namespace prefix (expected format: slug__tool_name)",
+            McpErrorCode.InvalidParams);
+    }
+
+    var (slug, realName) = split.Value;
+    if (!upstream.Connections.TryGetValue(slug, out var client))
+    {
+        throw new McpProtocolException(
+            $"No upstream server with slug '{slug}'",
+            McpErrorCode.InvalidParams);
+    }
+
+    var arguments = request.Params?.Arguments?.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
+    return await client.CallToolAsync(realName, arguments, cancellationToken: ct);
+})
+.WithListResourcesHandler(async (request, ct) =>
+{
+    var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+    var resources = new List<Resource>();
+
+    foreach (var (slug, client) in upstream.Connections)
+    {
+        try
+        {
+            var upstreamResources = await client.ListResourcesAsync(cancellationToken: ct);
+            foreach (var resource in upstreamResources)
+            {
+                resources.Add(new Resource
+                {
+                    Uri = Namespace.PrefixUri(slug, resource.Uri),
+                    Name = Namespace.Prefix(slug, resource.Name),
+                    Description = resource.Description,
+                    MimeType = resource.MimeType
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to list resources from upstream: {Slug}", slug);
+        }
+    }
+
+    return new ListResourcesResult { Resources = resources };
+})
+.WithReadResourceHandler(async (request, ct) =>
+{
+    var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+
+    var split = Namespace.SplitUri(request.Params?.Uri ?? "");
+    if (split is null)
+    {
+        throw new McpProtocolException(
+            $"Resource URI '{request.Params?.Uri}' is missing namespace prefix (expected format: proxy://slug/uri)",
+            McpErrorCode.InvalidParams);
+    }
+
+    var (slug, realUri) = split.Value;
+    if (!upstream.Connections.TryGetValue(slug, out var client))
+    {
+        throw new McpProtocolException(
+            $"No upstream server with slug '{slug}'",
+            McpErrorCode.InvalidParams);
+    }
+
+    return await client.ReadResourceAsync(realUri, cancellationToken: ct);
+})
+.WithListPromptsHandler(async (request, ct) =>
+{
+    var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+    var prompts = new List<Prompt>();
+
+    foreach (var (slug, client) in upstream.Connections)
+    {
+        try
+        {
+            var upstreamPrompts = await client.ListPromptsAsync(cancellationToken: ct);
+            foreach (var prompt in upstreamPrompts)
+            {
+                prompts.Add(new Prompt
+                {
+                    Name = Namespace.Prefix(slug, prompt.Name),
+                    Description = prompt.Description,
+                    Arguments = prompt.ProtocolPrompt.Arguments
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to list prompts from upstream: {Slug}", slug);
+        }
+    }
+
+    return new ListPromptsResult { Prompts = prompts };
+})
+.WithGetPromptHandler(async (request, ct) =>
+{
+    var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+
+    var split = Namespace.Split(request.Params?.Name ?? "");
+    if (split is null)
+    {
+        throw new McpProtocolException(
+            $"Prompt name '{request.Params?.Name}' is missing namespace prefix (expected format: slug__prompt_name)",
+            McpErrorCode.InvalidParams);
+    }
+
+    var (slug, realName) = split.Value;
+    if (!upstream.Connections.TryGetValue(slug, out var client))
+    {
+        throw new McpProtocolException(
+            $"No upstream server with slug '{slug}'",
+            McpErrorCode.InvalidParams);
+    }
+
+    var promptArgs = request.Params?.Arguments?.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
+    return await client.GetPromptAsync(realName, promptArgs, cancellationToken: ct);
+});
+
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents()
+    .AddInteractiveWebAssemblyComponents();
+
+var app = builder.Build();
+
+// Apply pending migrations on startup
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+}
+
+// Sync upstream connections in the background so the web UI is available immediately
+_ = Task.Run(async () =>
+{
+    var upstream = app.Services.GetRequiredService<UpstreamManager>();
+    await upstream.SyncAsync();
+    app.Logger.LogInformation("Upstream connections synced");
+});
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseWebAssemblyDebugging();
+}
+else
+{
+    app.UseExceptionHandler("/Error", createScopeForErrors: true);
+}
+app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+
+// Host guard middleware — validates Host header for /mcp requests
+app.UseMiddleware<HostGuardMiddleware>();
+
+app.UseAntiforgery();
+
+app.MapStaticAssets();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode()
+    .AddInteractiveWebAssemblyRenderMode()
+    .AddAdditionalAssemblies(typeof(DumbMcpMultiplexer.Client._Imports).Assembly);
+
+// Map the MCP endpoint at /mcp
+app.MapMcp("/mcp");
+
+app.Run();

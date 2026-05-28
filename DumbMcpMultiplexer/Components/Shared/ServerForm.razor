@@ -1,0 +1,360 @@
+@using DumbMcpMultiplexer.Models
+@using DumbMcpMultiplexer.Services
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@inject ServerService ServerService
+@inject UpstreamManager UpstreamManager
+
+@* Modal backdrop *@
+<div class="fixed inset-0 z-50 flex items-center justify-center">
+    @* Backdrop *@
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @onclick="Cancel"></div>
+
+    @* Modal card *@
+    <div class="relative z-10 w-full max-w-lg mx-4 rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-white">
+                @(IsEditMode ? "Edit Server" : "Add Server")
+            </h2>
+            <button @onclick="Cancel"
+                    class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <form @onsubmit="HandleSubmit" class="space-y-5">
+            @* Name field *@
+            <div>
+                <label class="block text-sm font-medium text-white mb-1.5">Name</label>
+                <input type="text"
+                       value="@_name"
+                       @oninput="OnNameChanged"
+                       placeholder="My MCP Server"
+                       class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+            </div>
+
+            @* Slug field *@
+            <div>
+                <label class="block text-sm font-medium text-white mb-1.5">Slug</label>
+                <input type="text"
+                       value="@_slug"
+                       @oninput="OnSlugManuallyEdited"
+                       placeholder="my-mcp-server"
+                       class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                @if (!string.IsNullOrEmpty(_slugError))
+                {
+                    <p class="mt-1 text-xs text-red-400">@_slugError</p>
+                }
+                else
+                {
+                    <p class="mt-1 text-xs text-gray-500">URL-safe identifier (lowercase, hyphens, underscores)</p>
+                }
+            </div>
+
+            @* URL field *@
+            <div>
+                <label class="block text-sm font-medium text-white mb-1.5">URL</label>
+                <input type="url"
+                       value="@_url"
+                       @oninput="(e) => _url = e.Value?.ToString() ?? string.Empty"
+                       placeholder="https://example.com/mcp"
+                       class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+            </div>
+
+            @* Headers (key-value list) *@
+            <div>
+                <label class="block text-sm font-medium text-white mb-1.5">Headers</label>
+                <div class="space-y-2">
+                    @for (int i = 0; i < _headers.Count; i++)
+                    {
+                        var index = i;
+                        <div class="flex gap-2">
+                            <input type="text"
+                                   value="@_headers[index].Key"
+                                   @oninput="(e) => UpdateHeaderKey(index, e.Value?.ToString() ?? string.Empty)"
+                                   placeholder="Header-Name"
+                                   class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                            <input type="text"
+                                   value="@_headers[index].Value"
+                                   @oninput="(e) => UpdateHeaderValue(index, e.Value?.ToString() ?? string.Empty)"
+                                   placeholder="value"
+                                   class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                            <button type="button" @onclick="() => RemoveHeader(index)"
+                                    class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-red-400 transition-colors">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    }
+                </div>
+                <button type="button" @onclick="AddHeader"
+                        class="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors">
+                    <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Add Header
+                </button>
+            </div>
+
+            @* Test Connection *@
+            <div>
+                <button type="button" @onclick="TestConnection"
+                        class="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    Test Connection
+                </button>
+                @if (!string.IsNullOrEmpty(_testMessage))
+                {
+                    <p class="mt-2 text-xs @(_testSuccess ? "text-emerald-400" : "text-yellow-400")">@_testMessage</p>
+                }
+            </div>
+
+            @* Error display *@
+            @if (!string.IsNullOrEmpty(_formError))
+            {
+                <div class="rounded-lg border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
+                    @_formError
+                </div>
+            }
+
+            @* Actions *@
+            <div class="flex items-center justify-end gap-3 pt-2">
+                <button type="button" @onclick="Cancel"
+                        class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" disabled="@_saving"
+                        class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    @if (_saving)
+                    {
+                        <span>Saving...</span>
+                    }
+                    else
+                    {
+                        <span>@(IsEditMode ? "Save Changes" : "Create Server")</span>
+                    }
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@code {
+    [Parameter] public McpServer? Server { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private bool IsEditMode => Server is not null;
+
+    private string _name = string.Empty;
+    private string _slug = string.Empty;
+    private string _url = string.Empty;
+    private List<HeaderEntry> _headers = new();
+
+    private string? _slugError;
+    private string? _formError;
+    private string? _testMessage;
+    private bool _testSuccess;
+    private bool _saving;
+    private bool _slugManuallyEdited;
+
+    private class HeaderEntry
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    protected override void OnInitialized()
+    {
+        if (Server is not null)
+        {
+            _name = Server.Name;
+            _slug = Server.Slug;
+            _url = Server.Url ?? string.Empty;
+            _slugManuallyEdited = true;
+
+            // Parse existing headers JSON
+            try
+            {
+                var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(Server.Headers);
+                if (dict is not null)
+                {
+                    _headers = dict.Select(kv => new HeaderEntry { Key = kv.Key, Value = kv.Value }).ToList();
+                }
+            }
+            catch
+            {
+                _headers = new List<HeaderEntry>();
+            }
+        }
+    }
+
+    private void OnNameChanged(ChangeEventArgs e)
+    {
+        _name = e.Value?.ToString() ?? string.Empty;
+        if (!_slugManuallyEdited)
+        {
+            _slug = Slugify(_name);
+        }
+    }
+
+    private void OnSlugManuallyEdited(ChangeEventArgs e)
+    {
+        _slug = e.Value?.ToString() ?? string.Empty;
+        _slugManuallyEdited = true;
+        _slugError = null;
+    }
+
+    private void UpdateHeaderKey(int index, string value)
+    {
+        if (index >= 0 && index < _headers.Count)
+            _headers[index].Key = value;
+    }
+
+    private void UpdateHeaderValue(int index, string value)
+    {
+        if (index >= 0 && index < _headers.Count)
+            _headers[index].Value = value;
+    }
+
+    private void AddHeader()
+    {
+        _headers.Add(new HeaderEntry());
+    }
+
+    private void RemoveHeader(int index)
+    {
+        if (index >= 0 && index < _headers.Count)
+            _headers.RemoveAt(index);
+    }
+
+    private async Task TestConnection()
+    {
+        _testMessage = null;
+        _testSuccess = false;
+
+        if (string.IsNullOrWhiteSpace(_url))
+        {
+            _testMessage = "URL is required to test a connection.";
+            return;
+        }
+
+        try
+        {
+            var headersDict = _headers
+                .Where(h => !string.IsNullOrWhiteSpace(h.Key))
+                .ToDictionary(h => h.Key.Trim(), h => h.Value.Trim());
+
+            var result = await UpstreamManager.TestConnectionAsync(_url.Trim(), headersDict);
+            _testMessage = $"Connected to {result.ServerName} v{result.ServerVersion}. Found {result.ToolCount} tool(s): {(result.ToolNames.Count == 0 ? "(none)" : string.Join(", ", result.ToolNames))}";
+            _testSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _testMessage = $"Connection failed: {ex.Message}";
+            _testSuccess = false;
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        _formError = null;
+        _slugError = null;
+
+        // Validate name
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            _formError = "Name is required.";
+            return;
+        }
+
+        // Validate slug format
+        if (string.IsNullOrWhiteSpace(_slug))
+        {
+            _slugError = "Slug is required.";
+            return;
+        }
+
+        if (!Regex.IsMatch(_slug, @"^[a-z0-9][a-z0-9\-_]*$"))
+        {
+            _slugError = "Slug must start with a letter or number and contain only lowercase letters, numbers, hyphens, and underscores.";
+            return;
+        }
+
+        // Check slug uniqueness
+        var excludeId = Server?.Id;
+        if (await ServerService.SlugExistsAsync(_slug, excludeId))
+        {
+            _slugError = "This slug is already in use.";
+            return;
+        }
+
+        // Validate URL
+        if (string.IsNullOrWhiteSpace(_url))
+        {
+            _formError = "URL is required.";
+            return;
+        }
+
+        // Build headers JSON
+        var headersDict = _headers
+            .Where(h => !string.IsNullOrWhiteSpace(h.Key))
+            .ToDictionary(h => h.Key.Trim(), h => h.Value.Trim());
+        var headersJson = JsonSerializer.Serialize(headersDict);
+
+        _saving = true;
+        StateHasChanged();
+
+        try
+        {
+            if (IsEditMode)
+            {
+                await ServerService.UpdateServerAsync(Server!.Id, _slug, _name.Trim(), _url.Trim(), headersJson);
+            }
+            else
+            {
+                await ServerService.CreateServerAsync(_slug, _name.Trim(), _url.Trim(), headersJson);
+            }
+
+            await OnSaved.InvokeAsync();
+
+            // Re-sync upstream connections in the background
+            _ = Task.Run(() => UpstreamManager.SyncAsync());
+        }
+        catch (Exception ex)
+        {
+            _formError = $"Failed to save: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task Cancel()
+    {
+        await OnCancel.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Converts a display name to a URL-safe slug.
+    /// Lowercase, non-alphanumeric characters replaced with hyphens, collapsed and trimmed.
+    /// </summary>
+    private static string Slugify(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        var slug = input.ToLowerInvariant();
+        // Replace non-alphanumeric characters with hyphens
+        slug = Regex.Replace(slug, @"[^a-z0-9]+", "-");
+        // Trim leading/trailing hyphens
+        slug = slug.Trim('-');
+        return slug;
+    }
+}

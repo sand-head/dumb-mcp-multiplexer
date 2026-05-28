@@ -1,0 +1,165 @@
+@page "/settings"
+@rendermode InteractiveServer
+@using DumbMcpMultiplexer.Services
+@inject ServerService ServerService
+
+<PageTitle>Settings</PageTitle>
+
+<div class="max-w-4xl mx-auto">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-white">Settings</h1>
+        <p class="mt-2 text-gray-400">Configure global settings for the MCP proxy server.</p>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
+        <div class="mb-4">
+            <h2 class="text-xl font-semibold text-white">Allowed Hosts</h2>
+            <p class="mt-1 text-sm text-gray-400">
+                Configure which hostnames are allowed to reach the <code class="text-gray-300">/mcp</code> endpoint.
+                This provides protection against
+                <a href="https://en.wikipedia.org/wiki/DNS_rebinding" target="_blank" class="text-indigo-400 hover:text-indigo-300 underline">DNS rebinding attacks</a>.
+                Loopback addresses (<code class="text-gray-300">localhost</code>, <code class="text-gray-300">127.0.0.1</code>, <code class="text-gray-300">::1</code>) are always allowed regardless of this setting.
+            </p>
+        </div>
+
+        <div class="space-y-2 mb-4">
+            @if (_hosts.Count == 0)
+            {
+                <p class="text-gray-500 italic text-sm">No allowed hosts configured. Only loopback addresses will be permitted.</p>
+            }
+            else
+            {
+                @for (int i = 0; i < _hosts.Count; i++)
+                {
+                    var index = i;
+                    <div class="flex items-center gap-2">
+                        <input type="text"
+                               value="@_hosts[index]"
+                               @oninput="(e) => UpdateHost(index, e.Value?.ToString() ?? string.Empty)"
+                               placeholder="e.g. myhost.example.com"
+                               class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white font-mono text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
+                        <button @onclick="() => RemoveHost(index)"
+                                class="text-gray-400 hover:text-red-400 px-2 py-1 text-lg font-bold"
+                                title="Remove host">
+                            ✕
+                        </button>
+                    </div>
+                }
+            }
+        </div>
+
+        <button @onclick="AddHost" class="text-indigo-400 hover:text-indigo-300 text-sm font-medium">
+            + Add Host
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_successMessage))
+    {
+        <div class="mt-4 bg-emerald-900/30 border border-emerald-800 rounded-lg px-4 py-3 text-emerald-300 text-sm">
+            @_successMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="mt-4 bg-red-900/30 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">
+            @_errorMessage
+        </div>
+    }
+
+    <div class="mt-6">
+        <button @onclick="SaveSettings"
+                disabled="@_saving"
+                class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded px-4 py-2 text-sm transition-colors">
+            @if (_saving)
+            {
+                <span>Saving...</span>
+            }
+            else
+            {
+                <span>Save Settings</span>
+            }
+        </button>
+    </div>
+</div>
+
+@code {
+    private List<string> _hosts = new();
+    private string? _successMessage;
+    private string? _errorMessage;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var value = await ServerService.GetSettingAsync("allowed_hosts");
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                _hosts = value.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                              .Select(h => h.Trim())
+                              .ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load settings: {ex.Message}";
+        }
+    }
+
+    private void AddHost()
+    {
+        _hosts.Add(string.Empty);
+        ClearMessages();
+    }
+
+    private void RemoveHost(int index)
+    {
+        if (index >= 0 && index < _hosts.Count)
+        {
+            _hosts.RemoveAt(index);
+            ClearMessages();
+        }
+    }
+
+    private void UpdateHost(int index, string value)
+    {
+        if (index >= 0 && index < _hosts.Count)
+        {
+            _hosts[index] = value;
+            ClearMessages();
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        ClearMessages();
+        _saving = true;
+
+        try
+        {
+            var commaSeparatedValue = string.Join(",", _hosts.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()));
+            await ServerService.SetSettingAsync("allowed_hosts", commaSeparatedValue);
+            _successMessage = "Settings saved successfully.";
+
+            // Refresh the list to remove any empty entries
+            _hosts = commaSeparatedValue.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(h => h.Trim())
+                                        .ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to save settings: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void ClearMessages()
+    {
+        _successMessage = null;
+        _errorMessage = null;
+    }
+}

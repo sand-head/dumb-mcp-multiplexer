@@ -1,8 +1,0 @@
-/home/sand_head/Source/Repos/sand-head/dumb-mcp-server-proxy/_legacy-rust/target/debug/deps/toml_datetime-899b1d73e2a0b13c.d: /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/lib.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/datetime.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/de.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/ser.rs
-
-/home/sand_head/Source/Repos/sand-head/dumb-mcp-server-proxy/_legacy-rust/target/debug/deps/libtoml_datetime-899b1d73e2a0b13c.rmeta: /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/lib.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/datetime.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/de.rs /home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/ser.rs
-
-/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/lib.rs:
-/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/datetime.rs:
-/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/de.rs:
-/home/sand_head/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0/src/ser.rs:

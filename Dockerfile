@@ -14,8 +14,10 @@ RUN dotnet restore
 COPY . .
 
 # Download Tailwind CSS standalone CLI for the build
-ADD https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 /usr/local/bin/tailwindcss
-RUN chmod +x /usr/local/bin/tailwindcss
+ARG TARGETARCH
+RUN TAILWIND_ARCH=$(case "$TARGETARCH" in arm64) echo "arm64" ;; *) echo "x64" ;; esac) && \
+    wget -qO /usr/local/bin/tailwindcss "https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-${TAILWIND_ARCH}" && \
+    chmod +x /usr/local/bin/tailwindcss
 
 RUN if [ -n "$APP_VERSION" ]; then \
       dotnet publish DumbMcpMultiplexer/DumbMcpMultiplexer.csproj -c Release -o /app/publish /p:Version=$APP_VERSION /p:TailwindCli=/usr/local/bin/tailwindcss; \

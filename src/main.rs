@@ -24,10 +24,18 @@ async fn main() {
     let pool = db::init_db().await.expect("Failed to initialize database");
     tracing::info!("Database initialized");
 
-    // Initialize upstream connection manager and sync with DB
+    // Initialize upstream connection manager.
+    // Sync runs in the background so the web UI is available immediately,
+    // even if an upstream server misbehaves (e.g. tight SSE retry loop).
     let upstream = UpstreamManager::new();
-    upstream.sync(&pool).await;
-    tracing::info!("Upstream connections synced");
+    {
+        let upstream = upstream.clone();
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            upstream.sync(&pool).await;
+            tracing::info!("Upstream connections synced");
+        });
+    }
 
     // Load allowed hosts from settings DB
     let hosts_setting = db::get_setting(&pool, "allowed_hosts")

@@ -35,6 +35,7 @@ impl UpstreamManager {
         url: &str,
         headers: &HashMap<String, String>,
     ) -> Result<(), String> {
+        tracing::info!(slug = %slug, url = %url, "Connecting to upstream MCP server");
         let config = build_transport_config(url, headers)?;
 
         // Create the transport worker (reqwest-based)
@@ -48,6 +49,7 @@ impl UpstreamManager {
 
         // Store the active connection
         self.connections.insert(slug.to_string(), client);
+        tracing::info!(slug = %slug, "Successfully connected to upstream");
         Ok(())
     }
 

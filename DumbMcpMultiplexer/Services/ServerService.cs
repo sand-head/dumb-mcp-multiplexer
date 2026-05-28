@@ -6,7 +6,7 @@ namespace DumbMcpMultiplexer.Services;
 
 public class ServerService(AppDbContext db)
 {
-    private const string ToolCapabilityKind = "tool";
+    private const string ToolCapabilityKind = ServerCapability.ToolKind;
 
     public async Task<List<McpServer>> GetAllServersAsync()
     {
@@ -97,9 +97,7 @@ public class ServerService(AppDbContext db)
 
     public async Task SyncToolCapabilitiesAsync(string serverId, IEnumerable<(string Name, string? Description, string? SchemaJson)> tools)
     {
-        var incomingTools = tools
-            .GroupBy(t => t.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var incomingTools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         var existingTools = await db.ServerCapabilities
             .Where(c => c.ServerId == serverId && c.Kind == ToolCapabilityKind)
             .ToListAsync();
@@ -143,7 +141,6 @@ public class ServerService(AppDbContext db)
             ?? throw new InvalidOperationException($"Tool capability '{toolName}' not found for server '{serverId}'");
 
         capability.Enabled = !capability.Enabled;
-        capability.FetchedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
     }
 

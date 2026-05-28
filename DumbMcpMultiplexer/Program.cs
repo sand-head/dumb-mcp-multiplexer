@@ -1,6 +1,7 @@
 using DumbMcpMultiplexer.Components;
 using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Middleware;
+using DumbMcpMultiplexer.Models;
 using DumbMcpMultiplexer.Services;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol;
@@ -43,7 +44,7 @@ builder.Services.AddMcpServer(options =>
     var connectedSlugs = upstream.Connections.Keys.ToList();
 
     var disabledToolLookup = await db.ServerCapabilities
-        .Where(c => c.Kind == "tool" && !c.Enabled && connectedSlugs.Contains(c.Server.Slug))
+        .Where(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && connectedSlugs.Contains(c.Server.Slug))
         .Select(c => new { c.Server.Slug, c.Name })
         .ToListAsync(ct);
     var disabledToolsBySlug = disabledToolLookup
@@ -94,7 +95,7 @@ builder.Services.AddMcpServer(options =>
     var (slug, realName) = split.Value;
 
     var toolDisabled = await db.ServerCapabilities
-        .AnyAsync(c => c.Kind == "tool" && !c.Enabled && c.Name == realName && c.Server.Slug == slug, ct);
+        .AnyAsync(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && c.Name == realName && c.Server.Slug == slug, ct);
     if (toolDisabled)
     {
         throw new McpProtocolException(

@@ -91,7 +91,7 @@ else
         </div>
     </div>
 
-    @* Namespace Prefix *@
+    @* Tool Controls *@
     <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
         <div class="flex items-start justify-between gap-4 mb-4">
             <div>
@@ -205,9 +205,9 @@ else
     protected override async Task OnParametersSetAsync()
     {
         loading = true;
+        toolsError = null;
         server = await ServerService.GetServerBySlugAsync(Slug);
         await LoadToolCapabilitiesAsync();
-        await RefreshToolsAsync();
         loading = false;
     }
 

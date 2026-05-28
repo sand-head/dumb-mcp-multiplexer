@@ -1,0 +1,21 @@
+[Unit]
+Description=Dumb MCP Multiplexer
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/sand-head/dumb-mcp-multiplexer:latest
+ContainerName=dumb-mcp-multiplexer
+PublishPort=0.0.0.0:7899:7899
+Volume=multiplexer-data.volume:/data:Z
+Tmpfs=/tmp:noexec,nosuid,size=64m
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+RunInit=true
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

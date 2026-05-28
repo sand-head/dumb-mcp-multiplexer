@@ -37,8 +37,18 @@ builder.Services.AddMcpServer(options =>
 .WithListToolsHandler(async (request, ct) =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var db = request.Services!.GetRequiredService<AppDbContext>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
     var tools = new List<Tool>();
+    var connectedSlugs = upstream.Connections.Keys.ToList();
+
+    var disabledToolLookup = await db.ServerCapabilities
+        .Where(c => c.Kind == "tool" && !c.Enabled && connectedSlugs.Contains(c.Server.Slug))
+        .Select(c => new { c.Server.Slug, c.Name })
+        .ToListAsync(ct);
+    var disabledToolsBySlug = disabledToolLookup
+        .GroupBy(x => x.Slug, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.Select(x => x.Name).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
 
     foreach (var (slug, client) in upstream.Connections)
     {
@@ -47,6 +57,11 @@ builder.Services.AddMcpServer(options =>
             var upstreamTools = await client.ListToolsAsync(cancellationToken: ct);
             foreach (var tool in upstreamTools)
             {
+                if (disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name))
+                {
+                    continue;
+                }
+
                 tools.Add(new Tool
                 {
                     Name = Namespace.Prefix(slug, tool.Name),
@@ -66,6 +81,7 @@ builder.Services.AddMcpServer(options =>
 .WithCallToolHandler(async (request, ct) =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var db = request.Services!.GetRequiredService<AppDbContext>();
 
     var split = Namespace.Split(request.Params?.Name ?? "");
     if (split is null)
@@ -76,6 +92,16 @@ builder.Services.AddMcpServer(options =>
     }
 
     var (slug, realName) = split.Value;
+
+    var toolDisabled = await db.ServerCapabilities
+        .AnyAsync(c => c.Kind == "tool" && !c.Enabled && c.Name == realName && c.Server.Slug == slug, ct);
+    if (toolDisabled)
+    {
+        throw new McpProtocolException(
+            $"Tool '{request.Params?.Name}' is disabled by multiplexer configuration",
+            McpErrorCode.InvalidParams);
+    }
+
     if (!upstream.Connections.TryGetValue(slug, out var client))
     {
         throw new McpProtocolException(

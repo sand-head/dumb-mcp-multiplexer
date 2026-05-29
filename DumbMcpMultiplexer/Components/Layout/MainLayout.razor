@@ -1,4 +1,5 @@
 ﻿@inherits LayoutComponentBase
+@using System.Reflection
 
 <div class="min-h-screen flex flex-col bg-gray-950 text-gray-100">
     <header class="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10">
@@ -29,9 +30,17 @@
     <footer class="border-t border-gray-800 py-4">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <p class="text-xs text-gray-500 text-center">
-                dumb-mcp-multiplexer &middot; Aggregating MCP endpoint at
+                dumb-mcp-multiplexer <span class="text-gray-600">v@_appVersion</span> &middot; Aggregating MCP endpoint at
                 <code class="text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded">POST /mcp</code>
             </p>
         </div>
     </footer>
 </div>
+
+@code {
+    private string _appVersion =
+        Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+            .Split('+')[0] ?? "dev";
+}

@@ -200,6 +200,68 @@ builder.Services.AddMcpServer(options =>
         return catResult;
     }
 
+    if (toolName == ProgressiveDiscoveryService.CallToolName)
+    {
+        var targetName = request.Params?.Arguments?.TryGetValue("name", out var n) == true ? n.ToString() : "";
+        logger.LogInformation("[{SessionId}] call_tool: name={TargetTool}", sessionId, targetName);
+
+        if (string.IsNullOrEmpty(targetName))
+        {
+            throw new McpProtocolException(
+                "The 'name' argument is required for call_tool",
+                McpErrorCode.InvalidParams);
+        }
+
+        var targetSplit = Namespace.Split(targetName);
+        if (targetSplit is null)
+        {
+            throw new McpProtocolException(
+                $"Tool name '{targetName}' is missing namespace prefix (expected format: slug__tool_name)",
+                McpErrorCode.InvalidParams);
+        }
+
+        var (targetSlug, targetRealName) = targetSplit.Value;
+
+        var targetDisabled = await db.ServerCapabilities
+            .AnyAsync(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && c.Name == targetRealName && c.Server.Slug == targetSlug, ct);
+        if (targetDisabled)
+        {
+            throw new McpProtocolException(
+                $"Tool '{targetName}' is disabled by multiplexer configuration",
+                McpErrorCode.InvalidParams);
+        }
+
+        if (!upstream.Connections.TryGetValue(targetSlug, out var targetClient))
+        {
+            throw new McpProtocolException(
+                $"No upstream server with slug '{targetSlug}'",
+                McpErrorCode.InvalidParams);
+        }
+
+        // Extract the nested arguments object
+        Dictionary<string, object?>? targetArgs = null;
+        if (request.Params?.Arguments?.TryGetValue("arguments", out var argsElement) == true)
+        {
+            if (argsElement is System.Text.Json.JsonElement jsonEl && jsonEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                targetArgs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonEl.GetRawText());
+            }
+        }
+
+        logger.LogInformation("[{SessionId}] call_tool: forwarding {RealName} \u2192 upstream '{Slug}'", sessionId, targetRealName, targetSlug);
+        try
+        {
+            var callResult = await targetClient.CallToolAsync(targetRealName, targetArgs, cancellationToken: ct);
+            logger.LogInformation("[{SessionId}] call_tool: {TargetTool} completed in {Elapsed}ms", sessionId, targetName, sw.ElapsedMilliseconds);
+            return callResult;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[{SessionId}] call_tool: {TargetTool} FAILED after {Elapsed}ms", sessionId, targetName, sw.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
     var split = Namespace.Split(toolName);
     if (split is null)
     {

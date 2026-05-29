@@ -16,6 +16,7 @@ public class ProgressiveDiscoveryService
     public const string SettingKey = "progressive_discovery";
     public const string SearchToolName = "search_tools";
     public const string ListCategoriesToolName = "list_tool_categories";
+    public const string CallToolName = "call_tool";
 
     /// <summary>
     /// Returns the meta-tools that are exposed when progressive discovery is enabled.
@@ -27,7 +28,7 @@ public class ProgressiveDiscoveryService
             new Tool
             {
                 Name = SearchToolName,
-                Description = "Search for available tools by keyword. Use this to discover tools that can help with your current task. Returns matching tool names, descriptions, and their input schemas.",
+                Description = "Discover available tools by searching with keywords. Always call this before call_tool — it returns the exact tool names and argument schemas you'll need. Accepts multiple space-separated keywords; results are ranked by relevance. If you get too many results, narrow your query or filter by server. If you get too few, broaden your keywords or paginate with offset/limit.",
                 InputSchema = JsonDocument.Parse("""
                 {
                     "type": "object",
@@ -59,12 +60,33 @@ public class ProgressiveDiscoveryService
             new Tool
             {
                 Name = ListCategoriesToolName,
-                Description = "List all available tool categories (upstream servers). Use this to understand what tool domains are available before searching for specific tools.",
+                Description = "List the upstream servers connected to this proxy, including their names, descriptions, and tool counts. Call this first if you're unsure which server handles a task (e.g. is it 'github' or 'gitlab'?), then use search_tools with the server filter to narrow results.",
                 InputSchema = JsonDocument.Parse("""
                 {
                     "type": "object",
                     "properties": {},
                     "required": []
+                }
+                """).RootElement
+            },
+            new Tool
+            {
+                Name = CallToolName,
+                Description = "Invoke any tool by its fully-qualified name. You must call search_tools first to get the tool name and its argument schema — do not guess tool names. Pass the exact name returned by search_tools (e.g. 'github__create_issue') and an arguments object matching that tool's input schema.",
+                InputSchema = JsonDocument.Parse("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "The fully-qualified tool name (e.g. 'github__create_issue') as returned by search_tools"
+                        },
+                        "arguments": {
+                            "type": "object",
+                            "description": "The arguments to pass to the tool, matching its input schema from search_tools"
+                        }
+                    },
+                    "required": ["name"]
                 }
                 """).RootElement
             }
@@ -306,8 +328,7 @@ public class ProgressiveDiscoveryService
                     server = slug,
                     name = client.ServerInfo?.Title ?? client.ServerInfo?.Name ?? slug,
                     description = client.ServerInfo?.Description,
-                    toolCount = upstreamTools.Count,
-                    tools = upstreamTools.Select(t => t.Name).ToList()
+                    toolCount = upstreamTools.Count
                 });
             }
             catch (Exception ex)

@@ -17,6 +17,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<ServerService>();
 builder.Services.AddSingleton<UpstreamManager>();
+builder.Services.AddSingleton<DiscoveredToolsTracker>();
 
 // Configure the MCP server with Streamable HTTP transport.
 // We use custom handlers to dynamically aggregate tools/resources/prompts from upstream servers.
@@ -29,22 +30,47 @@ builder.Services.AddMcpServer(options =>
     };
     options.Capabilities = new ServerCapabilities
     {
-        Tools = new ToolsCapability(),
+        Tools = new ToolsCapability { ListChanged = true },
         Resources = new ResourcesCapability(),
         Prompts = new PromptsCapability()
     };
 })
-.WithHttpTransport()
+.WithHttpTransport(options =>
+{
+#pragma warning disable MCPEXP002 // RunSessionHandler is experimental
+    options.RunSessionHandler = async (httpContext, server, ct) =>
+    {
+        try
+        {
+            await server.RunAsync(ct);
+        }
+        finally
+        {
+            // Clean up discovered tools for this session when it ends
+            var sessionId = server.SessionId;
+            if (sessionId is not null)
+            {
+                var tracker = httpContext.RequestServices.GetRequiredService<DiscoveredToolsTracker>();
+                tracker.ClearSession(sessionId);
+            }
+        }
+    };
+#pragma warning restore MCPEXP002
+})
 .WithListToolsHandler(async (request, ct) =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
 
-    // If progressive discovery is enabled, return only the meta-tools
+    // If progressive discovery is enabled, return meta-tools + any previously discovered tools for this session
     if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct))
     {
-        return new ListToolsResult { Tools = ProgressiveDiscoveryService.GetMetaTools().ToList() };
+        var tracker = request.Services!.GetRequiredService<DiscoveredToolsTracker>();
+        var sessionId = request.Server.SessionId ?? "";
+        var tools2 = new List<Tool>(ProgressiveDiscoveryService.GetMetaTools());
+        tools2.AddRange(tracker.GetDiscoveredTools(sessionId));
+        return new ListToolsResult { Tools = tools2 };
     }
 
     var tools = new List<Tool>();
@@ -97,8 +123,26 @@ builder.Services.AddMcpServer(options =>
     if (toolName == ProgressiveDiscoveryService.SearchToolName)
     {
         var query = request.Params?.Arguments?.TryGetValue("query", out var q) == true ? q.ToString() : "";
-        var server = request.Params?.Arguments?.TryGetValue("server", out var s) == true ? s.ToString() : null;
-        return await ProgressiveDiscoveryService.HandleSearchToolsAsync(upstream, db, query, server, logger, ct);
+        var serverFilter2 = request.Params?.Arguments?.TryGetValue("server", out var s) == true ? s.ToString() : null;
+
+        // Get matching tools once (used for both the response and tracker registration)
+        var matchingTools = await ProgressiveDiscoveryService.GetMatchingToolsAsync(upstream, db, query, serverFilter2, logger, ct);
+        var result = ProgressiveDiscoveryService.FormatSearchResult(matchingTools);
+
+        // Register discovered tools so they appear in subsequent tools/list responses
+        if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct))
+        {
+            var tracker = request.Services!.GetRequiredService<DiscoveredToolsTracker>();
+            var sessionId = request.Server.SessionId ?? "";
+            if (tracker.RegisterDiscoveredTools(sessionId, matchingTools))
+            {
+                // Notify the client that the tool list has changed so it re-fetches tools/list
+                await request.Server.SendNotificationAsync(
+                    NotificationMethods.ToolListChangedNotification, ct);
+            }
+        }
+
+        return result;
     }
 
     if (toolName == ProgressiveDiscoveryService.ListCategoriesToolName)

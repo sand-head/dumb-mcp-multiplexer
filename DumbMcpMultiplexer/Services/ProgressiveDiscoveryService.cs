@@ -70,9 +70,10 @@ public class ProgressiveDiscoveryService
     }
 
     /// <summary>
-    /// Handles the search_tools meta-tool call. Returns matching tools from upstream servers.
+    /// Returns matching Tool objects from upstream servers (for registering in the discovered tools tracker).
+    /// This is the same filtering logic as HandleSearchToolsAsync but returns Tool protocol objects.
     /// </summary>
-    public static async Task<CallToolResult> HandleSearchToolsAsync(
+    public static async Task<IReadOnlyList<Tool>> GetMatchingToolsAsync(
         UpstreamManager upstream,
         AppDbContext db,
         string query,
@@ -82,7 +83,6 @@ public class ProgressiveDiscoveryService
     {
         var connectedSlugs = upstream.Connections.Keys.ToList();
 
-        // Get disabled tools lookup
         var disabledToolLookup = await db.ServerCapabilities
             .Where(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && connectedSlugs.Contains(c.Server.Slug))
             .Select(c => new { c.Server.Slug, c.Name })
@@ -94,7 +94,7 @@ public class ProgressiveDiscoveryService
         var keywords = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(k => k.ToLowerInvariant())
             .ToArray();
-        var results = new List<object>();
+        var results = new List<Tool>();
 
         foreach (var (slug, client) in upstream.Connections)
         {
@@ -109,17 +109,16 @@ public class ProgressiveDiscoveryService
                     if (disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name))
                         continue;
 
-                    // Match against tool name and description
                     var searchText = $"{tool.Name} {tool.Description}".ToLowerInvariant();
                     var matches = keywords.Length == 0 || keywords.Any(k => searchText.Contains(k));
 
                     if (matches)
                     {
-                        results.Add(new
+                        results.Add(new Tool
                         {
-                            name = Namespace.Prefix(slug, tool.Name),
-                            description = tool.Description,
-                            inputSchema = tool.JsonSchema
+                            Name = Namespace.Prefix(slug, tool.Name),
+                            Description = tool.Description,
+                            InputSchema = tool.JsonSchema
                         });
                     }
                 }
@@ -130,6 +129,21 @@ public class ProgressiveDiscoveryService
             }
         }
 
+        return results;
+    }
+
+    /// <summary>
+    /// Formats a list of matching tools into a CallToolResult for the search_tools response.
+    /// </summary>
+    public static CallToolResult FormatSearchResult(IReadOnlyList<Tool> matchingTools)
+    {
+        var results = matchingTools.Select(tool => new
+        {
+            name = tool.Name,
+            description = tool.Description,
+            inputSchema = tool.InputSchema
+        }).ToList();
+
         var responseText = results.Count > 0
             ? JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true })
             : "No tools found matching your query. Try different keywords or use 'list_tool_categories' to see available servers.";
@@ -138,6 +152,21 @@ public class ProgressiveDiscoveryService
         {
             Content = [new TextContentBlock { Text = responseText }]
         };
+    }
+
+    /// <summary>
+    /// Handles the search_tools meta-tool call. Returns matching tools from upstream servers.
+    /// </summary>
+    public static async Task<CallToolResult> HandleSearchToolsAsync(
+        UpstreamManager upstream,
+        AppDbContext db,
+        string query,
+        string? serverFilter,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        var matchingTools = await GetMatchingToolsAsync(upstream, db, query, serverFilter, logger, ct);
+        return FormatSearchResult(matchingTools);
     }
 
     /// <summary>

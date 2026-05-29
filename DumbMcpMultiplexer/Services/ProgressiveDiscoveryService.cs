@@ -74,7 +74,7 @@ public class ProgressiveDiscoveryService
             new Tool
             {
                 Name = CallToolName,
-                Description = "Invoke any tool by its fully-qualified name. You must call search_tools first to get the tool name and its argument schema — do not guess tool names. Pass the exact name returned by search_tools (e.g. 'github__create_issue') and an arguments object matching that tool's input schema. Example: call_tool(name: 'github__search_pull_requests', arguments: {query: 'is:open assignee:me'}). If you cannot pass arguments as an object, encode them as a JSON string in arguments_json instead.",
+                Description = "Invoke any tool by its fully-qualified name. You must call search_tools first to get the tool name and its argument schema — do not guess tool names. Pass the exact name returned by search_tools (e.g. 'github__create_issue') and an arguments object matching that tool's input schema. Use 'arguments' if you can pass a structured object; if your client can only send string fields, use 'arguments_json' instead — it is used as a fallback when 'arguments' is absent or empty. Example: call_tool(name: 'github__search_pull_requests', arguments: {query: 'is:open assignee:me'}).",
                 InputSchema = JsonDocument.Parse("""
                 {
                     "type": "object",
@@ -83,13 +83,13 @@ public class ProgressiveDiscoveryService
                             "type": "string",
                             "description": "The fully-qualified tool name (e.g. 'github__create_issue') as returned by search_tools"
                         },
-                        "arguments": {
-                            "type": "object",
-                            "description": "The arguments to pass to the tool, matching its input schema from search_tools. Example: {\"query\": \"is:open assignee:me\"}"
-                        },
                         "arguments_json": {
                             "type": "string",
-                            "description": "Alternative to 'arguments': the tool arguments encoded as a JSON string. Use this if you cannot populate 'arguments' as an object. Example: \"{\\\"query\\\": \\\"is:open assignee:me\\\"}\""
+                            "description": "Fallback: tool arguments as a JSON string, used when 'arguments' is absent or an empty object. Example: \"{\\\"query\\\": \\\"is:open assignee:me\\\"}\""
+                        },
+                        "arguments": {
+                            "type": "object",
+                            "description": "The arguments to pass to the tool as an object (preferred). Falls back to 'arguments_json' when this is absent or empty. Example: {\"query\": \"is:open assignee:me\"}"
                         }
                     },
                     "required": ["name"]

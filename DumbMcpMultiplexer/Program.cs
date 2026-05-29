@@ -238,14 +238,16 @@ builder.Services.AddMcpServer(options =>
                 McpErrorCode.InvalidParams);
         }
 
-        // Extract the nested arguments object, accepting either an object or a JSON string
+        // Extract the nested arguments object.
+        // Prefer 'arguments' when it is a non-empty object; fall back to 'arguments_json' so that
+        // clients that cannot populate an object field don't get silenced by an accidental empty {} value.
         Dictionary<string, object?>? targetArgs = null;
-        if (request.Params?.Arguments?.TryGetValue("arguments", out var argsElement) == true)
+        if (request.Params?.Arguments?.TryGetValue("arguments", out var argsElement) == true
+            && argsElement is System.Text.Json.JsonElement jsonEl
+            && jsonEl.ValueKind == System.Text.Json.JsonValueKind.Object
+            && jsonEl.EnumerateObject().Any())
         {
-            if (argsElement is System.Text.Json.JsonElement jsonEl && jsonEl.ValueKind == System.Text.Json.JsonValueKind.Object)
-            {
-                targetArgs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonEl.GetRawText());
-            }
+            targetArgs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonEl.GetRawText());
         }
         else if (request.Params?.Arguments?.TryGetValue("arguments_json", out var argsJsonElement) == true)
         {

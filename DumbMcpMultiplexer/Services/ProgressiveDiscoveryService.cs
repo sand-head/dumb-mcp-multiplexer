@@ -304,6 +304,8 @@ public class ProgressiveDiscoveryService
                 categories.Add(new
                 {
                     server = slug,
+                    name = client.ServerInfo?.Title ?? client.ServerInfo?.Name ?? slug,
+                    description = client.ServerInfo?.Description,
                     toolCount = upstreamTools.Count,
                     tools = upstreamTools.Select(t => t.Name).ToList()
                 });
@@ -314,6 +316,8 @@ public class ProgressiveDiscoveryService
                 categories.Add(new
                 {
                     server = slug,
+                    name = slug,
+                    description = (string?)null,
                     toolCount = 0,
                     tools = new List<string>()
                 });

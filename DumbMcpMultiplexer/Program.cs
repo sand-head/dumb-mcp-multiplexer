@@ -8,8 +8,29 @@ using Microsoft.Extensions.Caching.Memory;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using Serilog;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Infrastructure", Serilog.Events.LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3} {Message:lj}{NewLine}{Exception}",
+        theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+    .CreateBootstrapLogger();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog((context, services, config) => config
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Infrastructure", Serilog.Events.LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3} {Message:lj}{NewLine}{Exception}",
+        theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code));
 
 // Add services to the container.
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -120,6 +141,10 @@ builder.Services.AddMcpServer(options =>
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
     var toolName = request.Params?.Name ?? "";
+    var sessionId = request.Server.SessionId ?? "(no session)";
+
+    logger.LogInformation("[{SessionId}] tools/call → {ToolName}", sessionId, toolName);
+    var sw = System.Diagnostics.Stopwatch.StartNew();
 
     // Handle progressive discovery meta-tools
     if (toolName == ProgressiveDiscoveryService.SearchToolName)
@@ -129,13 +154,23 @@ builder.Services.AddMcpServer(options =>
         var offset = request.Params?.Arguments?.TryGetValue("offset", out var o) == true && int.TryParse(o.ToString(), out var ov) ? ov : 0;
         var limit = request.Params?.Arguments?.TryGetValue("limit", out var l) == true && int.TryParse(l.ToString(), out var lv) ? lv : ProgressiveDiscoveryService.DefaultPageSize;
 
+        logger.LogInformation("[{SessionId}] search_tools: query={Query}, server={Server}, offset={Offset}, limit={Limit}",
+            sessionId, query, serverFilter2 ?? "*", offset, limit);
+
         // Cache search results so subsequent pages of the same query are fast
         var cache = request.Services!.GetRequiredService<IMemoryCache>();
         var cacheKey = $"search:{query}:{serverFilter2 ?? "*"}";
         if (!cache.TryGetValue<IReadOnlyList<Tool>>(cacheKey, out var matchingTools) || matchingTools is null)
         {
+            logger.LogInformation("[{SessionId}] search_tools: cache miss, querying upstreams...", sessionId);
             matchingTools = await ProgressiveDiscoveryService.GetMatchingToolsAsync(upstream, db, query, serverFilter2, logger, ct);
             cache.Set(cacheKey, matchingTools, TimeSpan.FromMinutes(2));
+            logger.LogInformation("[{SessionId}] search_tools: found {Count} matching tools in {Elapsed}ms",
+                sessionId, matchingTools.Count, sw.ElapsedMilliseconds);
+        }
+        else
+        {
+            logger.LogInformation("[{SessionId}] search_tools: cache hit ({Count} tools)", sessionId, matchingTools.Count);
         }
 
         var (result, pageTools) = ProgressiveDiscoveryService.FormatSearchResult(matchingTools, offset, limit);
@@ -144,10 +179,11 @@ builder.Services.AddMcpServer(options =>
         if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct) && pageTools.Count > 0)
         {
             var tracker = request.Services!.GetRequiredService<DiscoveredToolsTracker>();
-            var sessionId = request.Server.SessionId ?? "";
-            if (tracker.RegisterDiscoveredTools(sessionId, pageTools))
+            var sid = request.Server.SessionId ?? "";
+            if (tracker.RegisterDiscoveredTools(sid, pageTools))
             {
-                // Notify the client that the tool list has changed so it re-fetches tools/list
+                logger.LogInformation("[{SessionId}] search_tools: registered {Count} new tools, sending tools/list_changed",
+                    sessionId, pageTools.Count);
                 await request.Server.SendNotificationAsync(
                     NotificationMethods.ToolListChangedNotification, ct);
             }
@@ -158,12 +194,16 @@ builder.Services.AddMcpServer(options =>
 
     if (toolName == ProgressiveDiscoveryService.ListCategoriesToolName)
     {
-        return await ProgressiveDiscoveryService.HandleListCategoriesAsync(upstream, logger, ct);
+        logger.LogInformation("[{SessionId}] list_tool_categories", sessionId);
+        var catResult = await ProgressiveDiscoveryService.HandleListCategoriesAsync(upstream, logger, ct);
+        logger.LogInformation("[{SessionId}] list_tool_categories completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
+        return catResult;
     }
 
     var split = Namespace.Split(toolName);
     if (split is null)
     {
+        logger.LogWarning("[{SessionId}] tools/call: invalid tool name (no namespace): {ToolName}", sessionId, toolName);
         throw new McpProtocolException(
             $"Tool name '{request.Params?.Name}' is missing namespace prefix (expected format: slug__tool_name)",
             McpErrorCode.InvalidParams);
@@ -175,6 +215,7 @@ builder.Services.AddMcpServer(options =>
         .AnyAsync(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && c.Name == realName && c.Server.Slug == slug, ct);
     if (toolDisabled)
     {
+        logger.LogWarning("[{SessionId}] tools/call: tool disabled: {ToolName}", sessionId, toolName);
         throw new McpProtocolException(
             $"Tool '{request.Params?.Name}' is disabled by multiplexer configuration",
             McpErrorCode.InvalidParams);
@@ -182,13 +223,25 @@ builder.Services.AddMcpServer(options =>
 
     if (!upstream.Connections.TryGetValue(slug, out var client))
     {
+        logger.LogWarning("[{SessionId}] tools/call: no upstream for slug '{Slug}'", sessionId, slug);
         throw new McpProtocolException(
             $"No upstream server with slug '{slug}'",
             McpErrorCode.InvalidParams);
     }
 
+    logger.LogInformation("[{SessionId}] tools/call: forwarding {RealName} → upstream '{Slug}'", sessionId, realName, slug);
     var arguments = request.Params?.Arguments?.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
-    return await client.CallToolAsync(realName, arguments, cancellationToken: ct);
+    try
+    {
+        var callResult = await client.CallToolAsync(realName, arguments, cancellationToken: ct);
+        logger.LogInformation("[{SessionId}] tools/call: {ToolName} completed in {Elapsed}ms", sessionId, toolName, sw.ElapsedMilliseconds);
+        return callResult;
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "[{SessionId}] tools/call: {ToolName} FAILED after {Elapsed}ms", sessionId, toolName, sw.ElapsedMilliseconds);
+        throw;
+    }
 })
 .WithListResourcesHandler(async (request, ct) =>
 {

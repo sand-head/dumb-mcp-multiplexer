@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Models;
+using FuzzySharp;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Protocol;
 
@@ -103,8 +105,9 @@ public class ProgressiveDiscoveryService
     }
 
     /// <summary>
-    /// Returns matching Tool objects from upstream servers (for registering in the discovered tools tracker).
-    /// This is the same filtering logic as HandleSearchToolsAsync but returns Tool protocol objects.
+    /// Returns matching Tool objects from upstream servers, scored and sorted by relevance using
+    /// fuzzy string matching (FuzzySharp). Both tool name and description are scored separately;
+    /// name matches are weighted 2:1 over description matches.
     /// </summary>
     public static async Task<IReadOnlyList<Tool>> GetMatchingToolsAsync(
         UpstreamManager upstream,
@@ -124,10 +127,8 @@ public class ProgressiveDiscoveryService
             .GroupBy(x => x.Slug, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Select(x => x.Name).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
 
-        var keywords = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(k => k.ToLowerInvariant())
-            .ToArray();
-        var scored = new List<(Tool Tool, double Score)>();
+        var scored = new List<(Tool Tool, int Score)>();
+        var queryLower = query.Trim().ToLowerInvariant();
 
         foreach (var (slug, client) in upstream.Connections)
         {
@@ -142,65 +143,35 @@ public class ProgressiveDiscoveryService
                     if (disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name))
                         continue;
 
-                    // Empty query matches everything with no scoring
-                    if (keywords.Length == 0)
+                    var prefixedTool = new Tool
                     {
-                        scored.Add((new Tool
-                        {
-                            Name = Namespace.Prefix(slug, tool.Name),
-                            Description = tool.Description,
-                            InputSchema = tool.JsonSchema
-                        }, 0));
+                        Name = Namespace.Prefix(slug, tool.Name),
+                        Description = tool.Description,
+                        InputSchema = tool.JsonSchema
+                    };
+
+                    // Empty query: return everything unsorted
+                    if (string.IsNullOrEmpty(queryLower))
+                    {
+                        scored.Add((prefixedTool, 0));
                         continue;
                     }
 
                     var nameLower = tool.Name.ToLowerInvariant();
                     var descLower = (tool.Description ?? "").ToLowerInvariant();
 
-                    double totalScore = 0;
-                    int matchedCount = 0;
+                    // WeightedRatio handles both full and partial matching intelligently.
+                    // Name is weighted 2:1 over description — a query matching the tool's
+                    // name is a stronger signal than matching its prose description.
+                    var nameScore = Fuzz.WeightedRatio(queryLower, nameLower);
+                    var descScore = Fuzz.WeightedRatio(queryLower, descLower);
+                    var combinedScore = nameScore * 2 + descScore;
 
-                    foreach (var keyword in keywords)
-                    {
-                        double keywordScore = 0;
-
-                        // Score against name (higher weight)
-                        if (nameLower.Contains(keyword))
-                        {
-                            keywordScore += IsWordBoundaryMatch(nameLower, keyword) ? 10.0 : 5.0;
-                        }
-
-                        // Score against description (lower weight)
-                        if (descLower.Contains(keyword))
-                        {
-                            keywordScore += IsWordBoundaryMatch(descLower, keyword) ? 4.0 : 2.0;
-                        }
-
-                        if (keywordScore > 0)
-                        {
-                            matchedCount++;
-                            totalScore += keywordScore;
-                        }
-                    }
-
-                    // Must match at least one keyword
-                    if (matchedCount == 0)
+                    // Require at least one meaningful signal to avoid surfacing total noise
+                    if (nameScore < 50 && descScore < 50)
                         continue;
 
-                    // Bonus for matching more keywords (ratio of matched to total)
-                    double coverageRatio = (double)matchedCount / keywords.Length;
-                    // Strong multiplier for full coverage, graceful degradation for partial
-                    totalScore *= 0.5 + (coverageRatio * 0.5);
-                    // Extra bonus when ALL keywords match
-                    if (matchedCount == keywords.Length)
-                        totalScore *= 1.5;
-
-                    scored.Add((new Tool
-                    {
-                        Name = Namespace.Prefix(slug, tool.Name),
-                        Description = tool.Description,
-                        InputSchema = tool.JsonSchema
-                    }, totalScore));
+                    scored.Add((prefixedTool, combinedScore));
                 }
             }
             catch (Exception ex)
@@ -209,36 +180,10 @@ public class ProgressiveDiscoveryService
             }
         }
 
-        // If no keywords, return as-is (no sorting); otherwise sort by score descending
-        if (keywords.Length == 0)
+        if (string.IsNullOrEmpty(queryLower))
             return scored.Select(s => s.Tool).ToList();
 
         return scored.OrderByDescending(s => s.Score).Select(s => s.Tool).ToList();
-    }
-
-    /// <summary>
-    /// Checks whether a keyword appears at a word boundary in the text.
-    /// Word boundaries are defined by non-alphanumeric characters (underscores, hyphens, spaces, etc.)
-    /// or transitions that naturally separate tokens in tool names.
-    /// </summary>
-    private static bool IsWordBoundaryMatch(string text, string keyword)
-    {
-        int index = 0;
-        while (true)
-        {
-            index = text.IndexOf(keyword, index, StringComparison.Ordinal);
-            if (index < 0)
-                return false;
-
-            bool startBoundary = index == 0 || !char.IsLetterOrDigit(text[index - 1]);
-            int end = index + keyword.Length;
-            bool endBoundary = end >= text.Length || !char.IsLetterOrDigit(text[end]);
-
-            if (startBoundary || endBoundary)
-                return true;
-
-            index++;
-        }
     }
 
     /// <summary>

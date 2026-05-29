@@ -4,6 +4,7 @@ using DumbMcpMultiplexer.Middleware;
 using DumbMcpMultiplexer.Models;
 using DumbMcpMultiplexer.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -18,6 +19,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<ServerService>();
 builder.Services.AddSingleton<UpstreamManager>();
 builder.Services.AddSingleton<DiscoveredToolsTracker>();
+builder.Services.AddMemoryCache();
 
 // Configure the MCP server with Streamable HTTP transport.
 // We use custom handlers to dynamically aggregate tools/resources/prompts from upstream servers.
@@ -124,17 +126,26 @@ builder.Services.AddMcpServer(options =>
     {
         var query = request.Params?.Arguments?.TryGetValue("query", out var q) == true ? q.ToString() : "";
         var serverFilter2 = request.Params?.Arguments?.TryGetValue("server", out var s) == true ? s.ToString() : null;
+        var offset = request.Params?.Arguments?.TryGetValue("offset", out var o) == true && int.TryParse(o.ToString(), out var ov) ? ov : 0;
+        var limit = request.Params?.Arguments?.TryGetValue("limit", out var l) == true && int.TryParse(l.ToString(), out var lv) ? lv : ProgressiveDiscoveryService.DefaultPageSize;
 
-        // Get matching tools once (used for both the response and tracker registration)
-        var matchingTools = await ProgressiveDiscoveryService.GetMatchingToolsAsync(upstream, db, query, serverFilter2, logger, ct);
-        var result = ProgressiveDiscoveryService.FormatSearchResult(matchingTools);
+        // Cache search results so subsequent pages of the same query are fast
+        var cache = request.Services!.GetRequiredService<IMemoryCache>();
+        var cacheKey = $"search:{query}:{serverFilter2 ?? "*"}";
+        if (!cache.TryGetValue<IReadOnlyList<Tool>>(cacheKey, out var matchingTools) || matchingTools is null)
+        {
+            matchingTools = await ProgressiveDiscoveryService.GetMatchingToolsAsync(upstream, db, query, serverFilter2, logger, ct);
+            cache.Set(cacheKey, matchingTools, TimeSpan.FromMinutes(2));
+        }
 
-        // Register discovered tools so they appear in subsequent tools/list responses
-        if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct))
+        var (result, pageTools) = ProgressiveDiscoveryService.FormatSearchResult(matchingTools, offset, limit);
+
+        // Register only the tools in this page so they appear in subsequent tools/list responses
+        if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct) && pageTools.Count > 0)
         {
             var tracker = request.Services!.GetRequiredService<DiscoveredToolsTracker>();
             var sessionId = request.Server.SessionId ?? "";
-            if (tracker.RegisterDiscoveredTools(sessionId, matchingTools))
+            if (tracker.RegisterDiscoveredTools(sessionId, pageTools))
             {
                 // Notify the client that the tool list has changed so it re-fetches tools/list
                 await request.Server.SendNotificationAsync(

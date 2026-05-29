@@ -39,6 +39,17 @@ public class ProgressiveDiscoveryService
                         "server": {
                             "type": "string",
                             "description": "Optional: filter results to a specific server/category slug"
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Starting index for paginated results (default: 0)",
+                            "minimum": 0
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return (default: 20, max: 50)",
+                            "minimum": 1,
+                            "maximum": 50
                         }
                     },
                     "required": ["query"]
@@ -94,7 +105,7 @@ public class ProgressiveDiscoveryService
         var keywords = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(k => k.ToLowerInvariant())
             .ToArray();
-        var results = new List<Tool>();
+        var scored = new List<(Tool Tool, double Score)>();
 
         foreach (var (slug, client) in upstream.Connections)
         {
@@ -109,18 +120,65 @@ public class ProgressiveDiscoveryService
                     if (disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name))
                         continue;
 
-                    var searchText = $"{tool.Name} {tool.Description}".ToLowerInvariant();
-                    var matches = keywords.Length == 0 || keywords.Any(k => searchText.Contains(k));
-
-                    if (matches)
+                    // Empty query matches everything with no scoring
+                    if (keywords.Length == 0)
                     {
-                        results.Add(new Tool
+                        scored.Add((new Tool
                         {
                             Name = Namespace.Prefix(slug, tool.Name),
                             Description = tool.Description,
                             InputSchema = tool.JsonSchema
-                        });
+                        }, 0));
+                        continue;
                     }
+
+                    var nameLower = tool.Name.ToLowerInvariant();
+                    var descLower = (tool.Description ?? "").ToLowerInvariant();
+
+                    double totalScore = 0;
+                    int matchedCount = 0;
+
+                    foreach (var keyword in keywords)
+                    {
+                        double keywordScore = 0;
+
+                        // Score against name (higher weight)
+                        if (nameLower.Contains(keyword))
+                        {
+                            keywordScore += IsWordBoundaryMatch(nameLower, keyword) ? 10.0 : 5.0;
+                        }
+
+                        // Score against description (lower weight)
+                        if (descLower.Contains(keyword))
+                        {
+                            keywordScore += IsWordBoundaryMatch(descLower, keyword) ? 4.0 : 2.0;
+                        }
+
+                        if (keywordScore > 0)
+                        {
+                            matchedCount++;
+                            totalScore += keywordScore;
+                        }
+                    }
+
+                    // Must match at least one keyword
+                    if (matchedCount == 0)
+                        continue;
+
+                    // Bonus for matching more keywords (ratio of matched to total)
+                    double coverageRatio = (double)matchedCount / keywords.Length;
+                    // Strong multiplier for full coverage, graceful degradation for partial
+                    totalScore *= 0.5 + (coverageRatio * 0.5);
+                    // Extra bonus when ALL keywords match
+                    if (matchedCount == keywords.Length)
+                        totalScore *= 1.5;
+
+                    scored.Add((new Tool
+                    {
+                        Name = Namespace.Prefix(slug, tool.Name),
+                        Description = tool.Description,
+                        InputSchema = tool.JsonSchema
+                    }, totalScore));
                 }
             }
             catch (Exception ex)
@@ -129,30 +187,89 @@ public class ProgressiveDiscoveryService
             }
         }
 
-        return results;
+        // If no keywords, return as-is (no sorting); otherwise sort by score descending
+        if (keywords.Length == 0)
+            return scored.Select(s => s.Tool).ToList();
+
+        return scored.OrderByDescending(s => s.Score).Select(s => s.Tool).ToList();
     }
 
     /// <summary>
-    /// Formats a list of matching tools into a CallToolResult for the search_tools response.
+    /// Checks whether a keyword appears at a word boundary in the text.
+    /// Word boundaries are defined by non-alphanumeric characters (underscores, hyphens, spaces, etc.)
+    /// or transitions that naturally separate tokens in tool names.
     /// </summary>
-    public static CallToolResult FormatSearchResult(IReadOnlyList<Tool> matchingTools)
+    private static bool IsWordBoundaryMatch(string text, string keyword)
     {
-        var results = matchingTools.Select(tool => new
+        int index = 0;
+        while (true)
         {
-            name = tool.Name,
-            description = tool.Description,
-            inputSchema = tool.InputSchema
-        }).ToList();
+            index = text.IndexOf(keyword, index, StringComparison.Ordinal);
+            if (index < 0)
+                return false;
 
-        var responseText = results.Count > 0
-            ? JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true })
-            : "No tools found matching your query. Try different keywords or use 'list_tool_categories' to see available servers.";
+            bool startBoundary = index == 0 || !char.IsLetterOrDigit(text[index - 1]);
+            int end = index + keyword.Length;
+            bool endBoundary = end >= text.Length || !char.IsLetterOrDigit(text[end]);
 
-        return new CallToolResult
+            if (startBoundary || endBoundary)
+                return true;
+
+            index++;
+        }
+    }
+
+    /// <summary>
+    /// Formats a list of matching tools into a CallToolResult for the search_tools response,
+    /// applying pagination and including metadata about total results.
+    /// Returns the paginated subset of tools that were included in the response.
+    /// </summary>
+    public static (CallToolResult Result, IReadOnlyList<Tool> PageTools) FormatSearchResult(
+        IReadOnlyList<Tool> matchingTools, int offset = 0, int limit = DefaultPageSize)
+    {
+        limit = Math.Clamp(limit, 1, MaxPageSize);
+        offset = Math.Max(offset, 0);
+
+        var totalCount = matchingTools.Count;
+        var pageTools = matchingTools.Skip(offset).Take(limit).ToList();
+        var hasMore = offset + limit < totalCount;
+
+        if (pageTools.Count == 0 && totalCount == 0)
+        {
+            return (new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "No tools found matching your query. Try different keywords or use 'list_tool_categories' to see available servers." }]
+            }, []);
+        }
+
+        var response = new
+        {
+            tools = pageTools.Select(tool => new
+            {
+                name = tool.Name,
+                description = tool.Description,
+                inputSchema = tool.InputSchema
+            }).ToList(),
+            pagination = new
+            {
+                offset,
+                limit,
+                total = totalCount,
+                hasMore,
+                nextOffset = hasMore ? offset + limit : (int?)null
+            }
+        };
+
+        var responseText = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+
+        return (new CallToolResult
         {
             Content = [new TextContentBlock { Text = responseText }]
-        };
+        }, pageTools);
     }
+
+    public const int DefaultPageSize = 20;
+    public const int MaxPageSize = 50;
 
     /// <summary>
     /// Handles the search_tools meta-tool call. Returns matching tools from upstream servers.
@@ -166,7 +283,7 @@ public class ProgressiveDiscoveryService
         CancellationToken ct)
     {
         var matchingTools = await GetMatchingToolsAsync(upstream, db, query, serverFilter, logger, ct);
-        return FormatSearchResult(matchingTools);
+        return FormatSearchResult(matchingTools).Result;
     }
 
     /// <summary>

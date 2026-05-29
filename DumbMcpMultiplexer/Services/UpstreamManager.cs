@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Docker.DotNet.Models;
 using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Models;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -13,17 +13,13 @@ namespace DumbMcpMultiplexer.Services;
 /// Manages active MCP client connections to upstream servers.
 /// Registered as a singleton service.
 /// </summary>
-public sealed class UpstreamManager : IAsyncDisposable
+public sealed class UpstreamManager(
+    IServiceScopeFactory scopeFactory,
+    ContainerService containerService,
+    ILogger<UpstreamManager> logger) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, McpClient> _connections = new();
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<UpstreamManager> _logger;
-
-    public UpstreamManager(IServiceScopeFactory scopeFactory, ILogger<UpstreamManager> logger)
-    {
-        _scopeFactory = scopeFactory;
-        _logger = logger;
-    }
+    private readonly ConcurrentDictionary<string, ActiveConnection> _activeConnections = new();
 
     /// <summary>
     /// Gets the active client connections (slug → client).
@@ -33,43 +29,20 @@ public sealed class UpstreamManager : IAsyncDisposable
     /// <summary>
     /// Connect to a single upstream MCP server.
     /// </summary>
-    public async Task ConnectAsync(string slug, string url, Dictionary<string, string> headers, CancellationToken ct = default)
+    public async Task ConnectAsync(McpServer server, CancellationToken ct = default)
     {
-        _logger.LogInformation("Connecting to upstream MCP server: {Slug} at {Url}", slug, url);
+        logger.LogInformation("Connecting to upstream MCP server: {Slug} ({Transport})", server.Slug, server.Transport);
 
-        var httpClient = new HttpClient();
-        foreach (var (key, value) in headers)
+        var newConnection = await CreateConnectionAsync(server, ct);
+
+        if (_activeConnections.TryRemove(server.Slug, out var old))
         {
-            httpClient.DefaultRequestHeaders.TryAddWithoutValidation(key, value);
+            await old.DisposeAsync();
         }
 
-        var transportOptions = new HttpClientTransportOptions
-        {
-            Endpoint = new Uri(url),
-            Name = slug,
-        };
-
-        var transport = new HttpClientTransport(transportOptions, httpClient);
-
-        try
-        {
-            var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
-
-            // Remove old connection if it exists
-            if (_connections.TryRemove(slug, out var old))
-            {
-                await old.DisposeAsync();
-            }
-
-            _connections[slug] = client;
-            _logger.LogInformation("Successfully connected to upstream: {Slug}", slug);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to connect to upstream: {Slug}", slug);
-            httpClient.Dispose();
-            throw;
-        }
+        _activeConnections[server.Slug] = newConnection;
+        _connections[server.Slug] = newConnection.Client;
+        logger.LogInformation("Successfully connected to upstream: {Slug}", server.Slug);
     }
 
     /// <summary>
@@ -77,42 +50,35 @@ public sealed class UpstreamManager : IAsyncDisposable
     /// </summary>
     public async Task DisconnectAsync(string slug)
     {
-        if (_connections.TryRemove(slug, out var client))
+        _connections.TryRemove(slug, out _);
+        if (_activeConnections.TryRemove(slug, out var connection))
         {
-            await client.DisposeAsync();
-            _logger.LogInformation("Disconnected from upstream: {Slug}", slug);
+            await connection.DisposeAsync();
+            logger.LogInformation("Disconnected from upstream: {Slug}", slug);
         }
     }
 
     /// <summary>
     /// Test a connection to an upstream server without storing it.
     /// </summary>
-    public async Task<ConnectionTestResult> TestConnectionAsync(string url, Dictionary<string, string> headers, CancellationToken ct = default)
+    public async Task<ConnectionTestResult> TestConnectionAsync(McpServer server, CancellationToken ct = default)
     {
-        using var httpClient = new HttpClient();
-        foreach (var (key, value) in headers)
+        var connection = await CreateConnectionAsync(server, ct);
+        try
         {
-            httpClient.DefaultRequestHeaders.TryAddWithoutValidation(key, value);
+            var tools = await connection.Client.ListToolsAsync(cancellationToken: ct);
+            return new ConnectionTestResult
+            {
+                ServerName = connection.Client.ServerInfo?.Name ?? "Unknown",
+                ServerVersion = connection.Client.ServerInfo?.Version ?? "Unknown",
+                ToolCount = tools.Count,
+                ToolNames = tools.Select(t => t.Name).ToList()
+            };
         }
-
-        var transportOptions = new HttpClientTransportOptions
+        finally
         {
-            Endpoint = new Uri(url),
-            Name = "connection-test",
-        };
-
-        await using var transport = new HttpClientTransport(transportOptions, httpClient);
-        await using var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
-
-        var tools = await client.ListToolsAsync(cancellationToken: ct);
-
-        return new ConnectionTestResult
-        {
-            ServerName = client.ServerInfo?.Name ?? "Unknown",
-            ServerVersion = client.ServerInfo?.Version ?? "Unknown",
-            ToolCount = tools.Count,
-            ToolNames = tools.Select(t => t.Name).ToList()
-        };
+            await connection.DisposeAsync();
+        }
     }
 
     /// <summary>
@@ -121,11 +87,13 @@ public sealed class UpstreamManager : IAsyncDisposable
     /// </summary>
     public async Task SyncAsync(CancellationToken ct = default)
     {
-        using var scope = _scopeFactory.CreateScope();
+        using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var enabledServers = await db.Servers
-            .Where(s => s.Enabled && s.Url != null)
+            .Where(s => s.Enabled &&
+                ((s.Transport == "remote_http" && s.Url != null) ||
+                 (s.Transport == "stdio_container" && s.ContainerImage != null)))
             .ToListAsync(ct);
 
         var desiredSlugs = enabledServers.Select(s => s.Slug).ToHashSet();
@@ -142,30 +110,305 @@ public sealed class UpstreamManager : IAsyncDisposable
         // Add connections for new/re-enabled servers
         foreach (var server in enabledServers)
         {
-            if (!_connections.ContainsKey(server.Slug) && server.Url is not null)
+            if (_connections.ContainsKey(server.Slug))
             {
-                var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(server.Headers)
-                    ?? new Dictionary<string, string>();
-                try
-                {
-                    await ConnectAsync(server.Slug, server.Url, headers, ct);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to connect to upstream during sync: {Slug}", server.Slug);
-                }
+                continue;
+            }
+
+            try
+            {
+                await ConnectAsync(server, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to connect to upstream during sync: {Slug}", server.Slug);
             }
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var (slug, client) in _connections)
+        foreach (var slug in _connections.Keys.ToList())
         {
-            try { await client.DisposeAsync(); }
-            catch { /* best effort */ }
+            try
+            {
+                await DisconnectAsync(slug);
+            }
+            catch
+            {
+                // best effort
+            }
         }
-        _connections.Clear();
+    }
+
+    private async Task<ActiveConnection> CreateConnectionAsync(McpServer server, CancellationToken ct)
+    {
+        return server.Transport switch
+        {
+            "remote_http" => await CreateRemoteHttpConnectionAsync(server, ct),
+            "stdio_container" => await CreateContainerConnectionAsync(server, ct),
+            _ => throw new InvalidOperationException($"Unsupported transport: {server.Transport}")
+        };
+    }
+
+    private static async Task<ActiveConnection> CreateRemoteHttpConnectionAsync(McpServer server, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(server.Url))
+        {
+            throw new InvalidOperationException("Remote HTTP transport requires a URL.");
+        }
+
+        var headers = DeserializeStringDictionary(server.Headers);
+        var httpClient = new HttpClient();
+        foreach (var (key, value) in headers)
+        {
+            httpClient.DefaultRequestHeaders.TryAddWithoutValidation(key, value);
+        }
+
+        var transportOptions = new HttpClientTransportOptions
+        {
+            Endpoint = new Uri(server.Url),
+            Name = server.Slug,
+        };
+
+        try
+        {
+            var transport = new HttpClientTransport(transportOptions, httpClient);
+            var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
+            return new ActiveConnection(client);
+        }
+        catch
+        {
+            httpClient.Dispose();
+            throw;
+        }
+    }
+
+    private async Task<ActiveConnection> CreateContainerConnectionAsync(McpServer server, CancellationToken ct)
+    {
+        if (!containerService.IsAvailable || containerService.Client is null)
+        {
+            throw new InvalidOperationException("Container runtime socket is unavailable.");
+        }
+
+        if (string.IsNullOrWhiteSpace(server.ContainerImage))
+        {
+            throw new InvalidOperationException("Container transport requires a container image.");
+        }
+
+        var docker = containerService.Client;
+
+        var createParams = new CreateContainerParameters
+        {
+            Image = server.ContainerImage,
+            Cmd = BuildCommand(server.Command, server.Args),
+            Env = BuildEnvList(server.Env),
+            OpenStdin = true,
+            AttachStdin = true,
+            AttachStdout = true,
+            AttachStderr = true,
+            Tty = false,
+            HostConfig = new HostConfig
+            {
+                AutoRemove = true,
+                Binds = BuildMounts(server.ContainerMounts)
+            }
+        };
+
+        var created = await docker.Containers.CreateContainerAsync(createParams, ct);
+        var containerId = created.ID;
+        ContainerStdioTransport? transport = null;
+        try
+        {
+            var attachStream = await docker.Containers.AttachContainerAsync(
+                containerId,
+                false,
+                new ContainerAttachParameters
+                {
+                    Stdin = true,
+                    Stdout = true,
+                    Stderr = true,
+                    Stream = true
+                },
+                ct);
+
+            var started = await docker.Containers.StartContainerAsync(containerId, new ContainerStartParameters(), ct);
+            if (!started)
+            {
+                throw new InvalidOperationException($"Failed to start container '{containerId}'.");
+            }
+
+            transport = new ContainerStdioTransport(attachStream, server.Slug);
+            var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
+
+            return new ActiveConnection(client, transport, containerId, docker);
+        }
+        catch
+        {
+            if (transport is not null)
+            {
+                await transport.DisposeAsync();
+            }
+
+            await StopAndRemoveContainerAsync(docker, containerId);
+            throw;
+        }
+    }
+
+    private static Dictionary<string, string> DeserializeStringDictionary(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new Dictionary<string, string>();
+        }
+
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(json)
+            ?? new Dictionary<string, string>();
+    }
+
+    private static IList<string>? BuildCommand(string? command, string? argsJson)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            return null;
+        }
+
+        var cmd = new List<string> { command.Trim() };
+        if (!string.IsNullOrWhiteSpace(argsJson))
+        {
+            var args = JsonSerializer.Deserialize<List<string>>(argsJson) ?? [];
+            cmd.AddRange(args.Where(a => !string.IsNullOrWhiteSpace(a)));
+        }
+
+        return cmd;
+    }
+
+    private static IList<string>? BuildEnvList(string? envJson)
+    {
+        if (string.IsNullOrWhiteSpace(envJson))
+        {
+            return null;
+        }
+
+        var env = JsonSerializer.Deserialize<Dictionary<string, string>>(envJson);
+        if (env is null || env.Count == 0)
+        {
+            return null;
+        }
+
+        return env.Select(kvp => $"{kvp.Key}={kvp.Value}").ToList();
+    }
+
+    private static IList<string>? BuildMounts(string? mountsJson)
+    {
+        if (string.IsNullOrWhiteSpace(mountsJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(mountsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var binds = new List<string>();
+            foreach (var mount in doc.RootElement.EnumerateArray())
+            {
+                if (mount.ValueKind == JsonValueKind.String)
+                {
+                    var value = mount.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        binds.Add(value);
+                    }
+                    continue;
+                }
+
+                if (mount.ValueKind == JsonValueKind.Object
+                    && mount.TryGetProperty("HostPath", out var hostPath)
+                    && mount.TryGetProperty("ContainerPath", out var containerPath))
+                {
+                    var mode = mount.TryGetProperty("Mode", out var modeProperty)
+                        ? (modeProperty.GetString() ?? "rw")
+                        : "rw";
+
+                    var host = hostPath.GetString();
+                    var container = containerPath.GetString();
+                    if (!string.IsNullOrWhiteSpace(host) && !string.IsNullOrWhiteSpace(container))
+                    {
+                        binds.Add($"{host}:{container}:{mode}");
+                    }
+                }
+            }
+
+            return binds.Count == 0 ? null : binds;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task StopAndRemoveContainerAsync(Docker.DotNet.DockerClient client, string containerId)
+    {
+        try
+        {
+            await client.Containers.StopContainerAsync(containerId, new ContainerStopParameters());
+        }
+        catch
+        {
+            // Best effort
+        }
+
+        try
+        {
+            await client.Containers.RemoveContainerAsync(containerId, new ContainerRemoveParameters { Force = true });
+        }
+        catch
+        {
+            // Best effort
+        }
+    }
+
+    private sealed class ActiveConnection(
+        McpClient client,
+        IAsyncDisposable? transport = null,
+        string? containerId = null,
+        Docker.DotNet.DockerClient? dockerClient = null) : IAsyncDisposable
+    {
+        public McpClient Client { get; } = client;
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await Client.DisposeAsync();
+            }
+            catch
+            {
+                // best effort
+            }
+
+            if (transport is not null)
+            {
+                try
+                {
+                    await transport.DisposeAsync();
+                }
+                catch
+                {
+                    // best effort
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(containerId) && dockerClient is not null)
+            {
+                await StopAndRemoveContainerAsync(dockerClient, containerId);
+            }
+        }
     }
 }
 

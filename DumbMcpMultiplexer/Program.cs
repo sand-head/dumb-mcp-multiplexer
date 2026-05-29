@@ -39,6 +39,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<ServerService>();
 builder.Services.AddSingleton<UpstreamManager>();
+builder.Services.AddSingleton<ContainerService>();
 builder.Services.AddSingleton<DiscoveredToolsTracker>();
 builder.Services.AddMemoryCache();
 
@@ -435,6 +436,9 @@ builder.Services.AddRazorComponents()
     .AddInteractiveWebAssemblyComponents();
 
 var app = builder.Build();
+
+var containerService = app.Services.GetRequiredService<ContainerService>();
+await containerService.InitializeAsync();
 
 // Apply pending migrations on startup
 using (var scope = app.Services.CreateScope())

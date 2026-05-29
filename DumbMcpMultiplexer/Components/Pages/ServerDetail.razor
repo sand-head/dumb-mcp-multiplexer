@@ -77,9 +77,9 @@ else
 
             @* URL *@
             <div>
-                <dt class="text-sm text-gray-400 mb-1">URL</dt>
+                <dt class="text-sm text-gray-400 mb-1">@EndpointLabel</dt>
                 <dd class="text-white font-mono text-sm break-all">
-                    @(string.IsNullOrEmpty(server.Url) ? "—" : server.Url)
+                    @EndpointValue
                 </dd>
             </div>
 
@@ -229,8 +229,18 @@ else
     {
         "remote_http" => "Remote HTTP (SSE)",
         "remote_streamable_http" => "Remote Streamable HTTP",
+        "stdio_container" => "Container (stdio)",
         _ => transport
     };
+
+    private string EndpointLabel => server?.Transport == "stdio_container" ? "Container Image" : "URL";
+
+    private string EndpointValue =>
+        server is null
+            ? "—"
+            : server.Transport == "stdio_container"
+                ? (string.IsNullOrWhiteSpace(server.ContainerImage) ? "—" : server.ContainerImage)
+                : (string.IsNullOrWhiteSpace(server.Url) ? "—" : server.Url);
 
     private async Task ToggleEnabled()
     {

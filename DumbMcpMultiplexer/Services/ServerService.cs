@@ -28,15 +28,35 @@ public class ServerService(AppDbContext db)
         return await db.Servers.FirstOrDefaultAsync(s => s.Id == id);
     }
 
-    public async Task<McpServer> CreateServerAsync(string slug, string name, string? url, string headersJson)
+    public async Task<McpServer> CreateServerAsync(
+        string slug,
+        string name,
+        string transport,
+        string? url,
+        string headersJson,
+        string? command,
+        string? argsJson,
+        string? envJson,
+        string? containerImage,
+        string? containerRuntime,
+        string containerPackagesJson,
+        string containerMountsJson)
     {
         var server = new McpServer
         {
             Id = Guid.NewGuid().ToString(),
             Slug = slug,
             Name = name,
+            Transport = transport,
             Url = url,
             Headers = headersJson,
+            Command = command,
+            Args = argsJson,
+            Env = envJson,
+            ContainerImage = containerImage,
+            ContainerRuntime = containerRuntime,
+            ContainerPackages = containerPackagesJson,
+            ContainerMounts = containerMountsJson,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -46,15 +66,36 @@ public class ServerService(AppDbContext db)
         return server;
     }
 
-    public async Task UpdateServerAsync(string id, string slug, string name, string? url, string headersJson)
+    public async Task UpdateServerAsync(
+        string id,
+        string slug,
+        string name,
+        string transport,
+        string? url,
+        string headersJson,
+        string? command,
+        string? argsJson,
+        string? envJson,
+        string? containerImage,
+        string? containerRuntime,
+        string containerPackagesJson,
+        string containerMountsJson)
     {
         var server = await db.Servers.FindAsync(id)
             ?? throw new InvalidOperationException($"Server '{id}' not found");
 
         server.Slug = slug;
         server.Name = name;
+        server.Transport = transport;
         server.Url = url;
         server.Headers = headersJson;
+        server.Command = command;
+        server.Args = argsJson;
+        server.Env = envJson;
+        server.ContainerImage = containerImage;
+        server.ContainerRuntime = containerRuntime;
+        server.ContainerPackages = containerPackagesJson;
+        server.ContainerMounts = containerMountsJson;
         server.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();

@@ -25,7 +25,6 @@
         </div>
 
         <form @onsubmit="HandleSubmit" class="space-y-5">
-            @* Name field *@
             <div>
                 <label class="block text-sm font-medium text-white mb-1.5">Name</label>
                 <input type="text"
@@ -35,7 +34,6 @@
                        class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
             </div>
 
-            @* Slug field *@
             <div>
                 <label class="block text-sm font-medium text-white mb-1.5">Slug</label>
                 <input type="text"
@@ -53,53 +51,106 @@
                 }
             </div>
 
-            @* URL field *@
             <div>
-                <label class="block text-sm font-medium text-white mb-1.5">URL</label>
-                <input type="url"
-                       value="@_url"
-                       @oninput="(e) => _url = e.Value?.ToString() ?? string.Empty"
-                       placeholder="https://example.com/mcp"
-                       class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                <label class="block text-sm font-medium text-white mb-1.5">Transport</label>
+                <select value="@_transport"
+                        @onchange="OnTransportChanged"
+                        class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none">
+                    <option value="remote_http">Remote HTTP</option>
+                    <option value="stdio_container">Container</option>
+                </select>
             </div>
 
-            @* Headers (key-value list) *@
-            <div>
-                <label class="block text-sm font-medium text-white mb-1.5">Headers</label>
-                <div class="space-y-2">
-                    @for (int i = 0; i < _headers.Count; i++)
-                    {
-                        var index = i;
-                        <div class="flex gap-2">
-                            <input type="text"
-                                   value="@_headers[index].Key"
-                                   @oninput="(e) => UpdateHeaderKey(index, e.Value?.ToString() ?? string.Empty)"
-                                   placeholder="Header-Name"
-                                   class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                            <input type="text"
-                                   value="@_headers[index].Value"
-                                   @oninput="(e) => UpdateHeaderValue(index, e.Value?.ToString() ?? string.Empty)"
-                                   placeholder="value"
-                                   class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                            <button type="button" @onclick="() => RemoveHeader(index)"
-                                    class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-red-400 transition-colors">
-                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                </svg>
-                            </button>
-                        </div>
-                    }
+            @if (_transport == "remote_http")
+            {
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">URL</label>
+                    <input type="url"
+                           value="@_url"
+                           @oninput="(e) => _url = e.Value?.ToString() ?? string.Empty"
+                           placeholder="https://example.com/mcp"
+                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
                 </div>
-                <button type="button" @onclick="AddHeader"
-                        class="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors">
-                    <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                    </svg>
-                    Add Header
-                </button>
-            </div>
 
-            @* Test Connection *@
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Headers</label>
+                    <div class="space-y-2">
+                        @for (int i = 0; i < _headers.Count; i++)
+                        {
+                            var index = i;
+                            <div class="flex gap-2">
+                                <input type="text"
+                                       value="@_headers[index].Key"
+                                       @oninput="(e) => UpdateHeaderKey(index, e.Value?.ToString() ?? string.Empty)"
+                                       placeholder="Header-Name"
+                                       class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                <input type="text"
+                                       value="@_headers[index].Value"
+                                       @oninput="(e) => UpdateHeaderValue(index, e.Value?.ToString() ?? string.Empty)"
+                                       placeholder="value"
+                                       class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                <button type="button" @onclick="() => RemoveHeader(index)"
+                                        class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-red-400 transition-colors">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                    <button type="button" @onclick="AddHeader"
+                            class="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors">
+                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Add Header
+                    </button>
+                </div>
+            }
+            else if (_transport == "stdio_container")
+            {
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Container Image</label>
+                    <input type="text"
+                           value="@_containerImage"
+                           @oninput="(e) => _containerImage = e.Value?.ToString() ?? string.Empty"
+                           placeholder="ghcr.io/org/mcp-server:latest"
+                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Command</label>
+                    <input type="text"
+                           value="@_command"
+                           @oninput="(e) => _command = e.Value?.ToString() ?? string.Empty"
+                           placeholder="npx"
+                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Args (JSON array)</label>
+                    <textarea rows="3"
+                              value="@_argsJson"
+                              @oninput="(e) => _argsJson = e.Value?.ToString() ?? string.Empty"
+                              placeholder="[\"@modelcontextprotocol/server-filesystem\", \"/workspace\"]"
+                              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Env (JSON object)</label>
+                    <textarea rows="3"
+                              value="@_envJson"
+                              @oninput="(e) => _envJson = e.Value?.ToString() ?? string.Empty"
+                              placeholder="{\"KEY\":\"VALUE\"}"
+                              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Mounts (JSON array)</label>
+                    <textarea rows="3"
+                              value="@_mountsJson"
+                              @oninput="(e) => _mountsJson = e.Value?.ToString() ?? string.Empty"
+                              placeholder='["/host/path:/container/path:ro"]'
+                              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
+                </div>
+            }
+
             <div>
                 <button type="button" @onclick="TestConnection"
                         class="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors">
@@ -114,7 +165,6 @@
                 }
             </div>
 
-            @* Error display *@
             @if (!string.IsNullOrEmpty(_formError))
             {
                 <div class="rounded-lg border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
@@ -122,7 +172,6 @@
                 </div>
             }
 
-            @* Actions *@
             <div class="flex items-center justify-end gap-3 pt-2">
                 <button type="button" @onclick="Cancel"
                         class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors">
@@ -153,8 +202,15 @@
 
     private string _name = string.Empty;
     private string _slug = string.Empty;
+    private string _transport = "remote_http";
     private string _url = string.Empty;
-    private List<HeaderEntry> _headers = new();
+    private List<HeaderEntry> _headers = [];
+
+    private string _command = string.Empty;
+    private string _argsJson = "[]";
+    private string _envJson = "{}";
+    private string _containerImage = string.Empty;
+    private string _mountsJson = "[]";
 
     private string? _slugError;
     private string? _formError;
@@ -171,26 +227,33 @@
 
     protected override void OnInitialized()
     {
-        if (Server is not null)
+        if (Server is null)
         {
-            _name = Server.Name;
-            _slug = Server.Slug;
-            _url = Server.Url ?? string.Empty;
-            _slugManuallyEdited = true;
+            return;
+        }
 
-            // Parse existing headers JSON
-            try
+        _name = Server.Name;
+        _slug = Server.Slug;
+        _transport = string.IsNullOrWhiteSpace(Server.Transport) ? "remote_http" : Server.Transport;
+        _url = Server.Url ?? string.Empty;
+        _command = Server.Command ?? string.Empty;
+        _argsJson = string.IsNullOrWhiteSpace(Server.Args) ? "[]" : (Server.Args ?? "[]");
+        _envJson = string.IsNullOrWhiteSpace(Server.Env) ? "{}" : (Server.Env ?? "{}");
+        _containerImage = Server.ContainerImage ?? string.Empty;
+        _mountsJson = string.IsNullOrWhiteSpace(Server.ContainerMounts) ? "[]" : Server.ContainerMounts;
+        _slugManuallyEdited = true;
+
+        try
+        {
+            var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(Server.Headers);
+            if (dict is not null)
             {
-                var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(Server.Headers);
-                if (dict is not null)
-                {
-                    _headers = dict.Select(kv => new HeaderEntry { Key = kv.Key, Value = kv.Value }).ToList();
-                }
+                _headers = dict.Select(kv => new HeaderEntry { Key = kv.Key, Value = kv.Value }).ToList();
             }
-            catch
-            {
-                _headers = new List<HeaderEntry>();
-            }
+        }
+        catch
+        {
+            _headers = [];
         }
     }
 
@@ -210,27 +273,36 @@
         _slugError = null;
     }
 
+    private void OnTransportChanged(ChangeEventArgs e)
+    {
+        _transport = e.Value?.ToString() ?? "remote_http";
+        _testMessage = null;
+    }
+
     private void UpdateHeaderKey(int index, string value)
     {
         if (index >= 0 && index < _headers.Count)
+        {
             _headers[index].Key = value;
+        }
     }
 
     private void UpdateHeaderValue(int index, string value)
     {
         if (index >= 0 && index < _headers.Count)
+        {
             _headers[index].Value = value;
+        }
     }
 
-    private void AddHeader()
-    {
-        _headers.Add(new HeaderEntry());
-    }
+    private void AddHeader() => _headers.Add(new HeaderEntry());
 
     private void RemoveHeader(int index)
     {
         if (index >= 0 && index < _headers.Count)
+        {
             _headers.RemoveAt(index);
+        }
     }
 
     private async Task TestConnection()
@@ -238,19 +310,15 @@
         _testMessage = null;
         _testSuccess = false;
 
-        if (string.IsNullOrWhiteSpace(_url))
+        if (!TryBuildDraftServer(out var draftServer, out var errorMessage))
         {
-            _testMessage = "URL is required to test a connection.";
+            _testMessage = errorMessage;
             return;
         }
 
         try
         {
-            var headersDict = _headers
-                .Where(h => !string.IsNullOrWhiteSpace(h.Key))
-                .ToDictionary(h => h.Key.Trim(), h => h.Value.Trim());
-
-            var result = await UpstreamManager.TestConnectionAsync(_url.Trim(), headersDict);
+            var result = await UpstreamManager.TestConnectionAsync(draftServer);
             _testMessage = $"Connected to {result.ServerName} v{result.ServerVersion}. Found {result.ToolCount} tool(s): {(result.ToolNames.Count == 0 ? "(none)" : string.Join(", ", result.ToolNames))}";
             _testSuccess = true;
         }
@@ -266,14 +334,12 @@
         _formError = null;
         _slugError = null;
 
-        // Validate name
         if (string.IsNullOrWhiteSpace(_name))
         {
             _formError = "Name is required.";
             return;
         }
 
-        // Validate slug format
         if (string.IsNullOrWhiteSpace(_slug))
         {
             _slugError = "Slug is required.";
@@ -286,7 +352,6 @@
             return;
         }
 
-        // Check slug uniqueness
         var excludeId = Server?.Id;
         if (await ServerService.SlugExistsAsync(_slug, excludeId))
         {
@@ -294,18 +359,11 @@
             return;
         }
 
-        // Validate URL
-        if (string.IsNullOrWhiteSpace(_url))
+        if (!TryBuildDraftServer(out var draftServer, out var errorMessage))
         {
-            _formError = "URL is required.";
+            _formError = errorMessage;
             return;
         }
-
-        // Build headers JSON
-        var headersDict = _headers
-            .Where(h => !string.IsNullOrWhiteSpace(h.Key))
-            .ToDictionary(h => h.Key.Trim(), h => h.Value.Trim());
-        var headersJson = JsonSerializer.Serialize(headersDict);
 
         _saving = true;
         StateHasChanged();
@@ -314,16 +372,39 @@
         {
             if (IsEditMode)
             {
-                await ServerService.UpdateServerAsync(Server!.Id, _slug, _name.Trim(), _url.Trim(), headersJson);
+                await ServerService.UpdateServerAsync(
+                    Server!.Id,
+                    _slug,
+                    _name.Trim(),
+                    draftServer.Transport,
+                    draftServer.Url,
+                    draftServer.Headers,
+                    draftServer.Command,
+                    draftServer.Args,
+                    draftServer.Env,
+                    draftServer.ContainerImage,
+                    draftServer.ContainerRuntime,
+                    draftServer.ContainerPackages,
+                    draftServer.ContainerMounts);
             }
             else
             {
-                await ServerService.CreateServerAsync(_slug, _name.Trim(), _url.Trim(), headersJson);
+                await ServerService.CreateServerAsync(
+                    _slug,
+                    _name.Trim(),
+                    draftServer.Transport,
+                    draftServer.Url,
+                    draftServer.Headers,
+                    draftServer.Command,
+                    draftServer.Args,
+                    draftServer.Env,
+                    draftServer.ContainerImage,
+                    draftServer.ContainerRuntime,
+                    draftServer.ContainerPackages,
+                    draftServer.ContainerMounts);
             }
 
             await OnSaved.InvokeAsync();
-
-            // Re-sync upstream connections in the background
             _ = Task.Run(() => UpstreamManager.SyncAsync());
         }
         catch (Exception ex)
@@ -336,25 +417,133 @@
         }
     }
 
-    private async Task Cancel()
+    private bool TryBuildDraftServer(out McpServer draftServer, out string errorMessage)
     {
-        await OnCancel.InvokeAsync();
+        draftServer = new McpServer
+        {
+            Slug = _slug.Trim(),
+            Name = _name.Trim(),
+            Transport = _transport.Trim(),
+            Headers = "{}",
+            ContainerPackages = "[]",
+            ContainerMounts = "[]"
+        };
+
+        if (draftServer.Transport == "remote_http")
+        {
+            if (string.IsNullOrWhiteSpace(_url))
+            {
+                errorMessage = "URL is required for Remote HTTP transport.";
+                return false;
+            }
+
+            var headersDict = _headers
+                .Where(h => !string.IsNullOrWhiteSpace(h.Key))
+                .ToDictionary(h => h.Key.Trim(), h => h.Value.Trim());
+
+            draftServer.Url = _url.Trim();
+            draftServer.Headers = JsonSerializer.Serialize(headersDict);
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        if (draftServer.Transport == "stdio_container")
+        {
+            if (string.IsNullOrWhiteSpace(_containerImage))
+            {
+                errorMessage = "Container image is required for container transport.";
+                return false;
+            }
+
+            if (!TryNormalizeJsonObject(_envJson, out var normalizedEnvJson, out errorMessage))
+            {
+                return false;
+            }
+
+            if (!TryNormalizeJsonArray(_argsJson, out var normalizedArgsJson, out errorMessage))
+            {
+                return false;
+            }
+
+            if (!TryNormalizeJsonArray(_mountsJson, out var normalizedMountsJson, out errorMessage))
+            {
+                return false;
+            }
+
+            draftServer.Url = null;
+            draftServer.Headers = "{}";
+            draftServer.ContainerImage = _containerImage.Trim();
+            draftServer.Command = string.IsNullOrWhiteSpace(_command) ? null : _command.Trim();
+            draftServer.Args = normalizedArgsJson;
+            draftServer.Env = normalizedEnvJson;
+            draftServer.ContainerMounts = normalizedMountsJson;
+
+            return true;
+        }
+
+        errorMessage = $"Unsupported transport '{draftServer.Transport}'.";
+        return false;
     }
 
-    /// <summary>
-    /// Converts a display name to a URL-safe slug.
-    /// Lowercase, non-alphanumeric characters replaced with hyphens, collapsed and trimmed.
-    /// </summary>
+    private static bool TryNormalizeJsonObject(string json, out string normalized, out string errorMessage)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                normalized = string.Empty;
+                errorMessage = "Env must be a JSON object.";
+                return false;
+            }
+
+            normalized = doc.RootElement.GetRawText();
+            errorMessage = string.Empty;
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            normalized = string.Empty;
+            errorMessage = $"Invalid Env JSON: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static bool TryNormalizeJsonArray(string json, out string normalized, out string errorMessage)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "[]" : json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                normalized = string.Empty;
+                errorMessage = "Args/Mounts must be JSON arrays.";
+                return false;
+            }
+
+            normalized = doc.RootElement.GetRawText();
+            errorMessage = string.Empty;
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            normalized = string.Empty;
+            errorMessage = $"Invalid JSON array: {ex.Message}";
+            return false;
+        }
+    }
+
+    private async Task Cancel() => await OnCancel.InvokeAsync();
+
     private static string Slugify(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
+        {
             return string.Empty;
+        }
 
         var slug = input.ToLowerInvariant();
-        // Replace non-alphanumeric characters with hyphens
         slug = Regex.Replace(slug, @"[^a-z0-9]+", "-");
-        // Trim leading/trailing hyphens
-        slug = slug.Trim('-');
-        return slug;
+        return slug.Trim('-');
     }
 }

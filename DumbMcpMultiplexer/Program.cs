@@ -238,13 +238,31 @@ builder.Services.AddMcpServer(options =>
                 McpErrorCode.InvalidParams);
         }
 
-        // Extract the nested arguments object
+        // Extract the nested arguments object, accepting either an object or a JSON string
         Dictionary<string, object?>? targetArgs = null;
         if (request.Params?.Arguments?.TryGetValue("arguments", out var argsElement) == true)
         {
             if (argsElement is System.Text.Json.JsonElement jsonEl && jsonEl.ValueKind == System.Text.Json.JsonValueKind.Object)
             {
                 targetArgs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonEl.GetRawText());
+            }
+        }
+        else if (request.Params?.Arguments?.TryGetValue("arguments_json", out var argsJsonElement) == true)
+        {
+            var argsJson = argsJsonElement.ToString();
+            if (!string.IsNullOrWhiteSpace(argsJson))
+            {
+                try
+                {
+                    targetArgs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(argsJson);
+                }
+                catch (System.Text.Json.JsonException ex)
+                {
+                    logger.LogWarning("[{SessionId}] call_tool: failed to parse arguments_json: {Error}", sessionId, ex.Message);
+                    throw new McpProtocolException(
+                        $"Invalid JSON in arguments_json: {ex.Message}",
+                        McpErrorCode.InvalidParams);
+                }
             }
         }
 

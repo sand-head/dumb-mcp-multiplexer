@@ -38,9 +38,9 @@ public class ServerService(AppDbContext db)
         string? argsJson,
         string? envJson,
         string? containerImage,
-        string? containerRuntime,
-        string containerPackagesJson,
-        string containerMountsJson)
+        string containerMountsJson,
+        string? packageRunner,
+        string? containerfile)
     {
         var server = new McpServer
         {
@@ -54,9 +54,9 @@ public class ServerService(AppDbContext db)
             Args = argsJson,
             Env = envJson,
             ContainerImage = containerImage,
-            ContainerRuntime = containerRuntime,
-            ContainerPackages = containerPackagesJson,
             ContainerMounts = containerMountsJson,
+            PackageRunner = packageRunner,
+            Containerfile = containerfile,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -77,9 +77,9 @@ public class ServerService(AppDbContext db)
         string? argsJson,
         string? envJson,
         string? containerImage,
-        string? containerRuntime,
-        string containerPackagesJson,
-        string containerMountsJson)
+        string containerMountsJson,
+        string? packageRunner,
+        string? containerfile)
     {
         var server = await db.Servers.FindAsync(id)
             ?? throw new InvalidOperationException($"Server '{id}' not found");
@@ -93,9 +93,9 @@ public class ServerService(AppDbContext db)
         server.Args = argsJson;
         server.Env = envJson;
         server.ContainerImage = containerImage;
-        server.ContainerRuntime = containerRuntime;
-        server.ContainerPackages = containerPackagesJson;
         server.ContainerMounts = containerMountsJson;
+        server.PackageRunner = packageRunner;
+        server.Containerfile = containerfile;
         server.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();

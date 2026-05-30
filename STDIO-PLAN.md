@@ -2,7 +2,13 @@
 
 ## Overview
 
-Add support for local/stdio MCP servers to the multiplexer, using containers (Podman/Docker) as the universal execution backend. Users specify a command and package dependencies; the multiplexer opaquely handles image building, caching, lifecycle management, and stdio transport — no container knowledge required from the end user.
+Add support for local/stdio MCP servers to the multiplexer, using containers as the universal execution backend. Three modes of connecting to an upstream MCP server:
+
+1. **Remote** — existing HTTP transport (already implemented)
+2. **Package Runner** — specify a runner (`uvx`, `npx`) + package name; uses a well-known public base image with a shared cache volume, no build step
+3. **Custom Containerfile** — provide a Containerfile; built via the Docker API, cached by content hash
+
+All container communication happens through the Docker-compatible REST API socket (works identically with Podman and Docker).
 
 ## Architecture
 
@@ -12,10 +18,10 @@ Add support for local/stdio MCP servers to the multiplexer, using containers (Po
 │                                                         │
 │  UpstreamManager                                        │
 │  ├── Remote HTTP connections (existing)                 │
-│  └── Stdio connections (new)                            │
+│  └── Stdio connections                                  │
 │       ├── ContainerService (Docker.DotNet via socket)   │
-│       ├── ImageBuilder (generates + caches images)      │
-│       └── ProcessLifecycleManager (start/stop/restart)  │
+│       ├── ImageResolver (package runner vs custom)      │
+│       └── ContainerStdioTransport (attach stream)       │
 └─────────────────────────────────────────────────────────┘
         │ container attach (stdin/stdout stream)
         ▼
@@ -35,103 +41,128 @@ No CLI parsing. No "is this podman or docker" detection logic. One socket, one A
 |---------|--------|
 | [`Docker.DotNet`](https://github.com/dotnet/Docker.DotNet) | Docker-compatible API client over Unix socket (works with Podman and Docker) |
 | `ModelContextProtocol` (existing) | MCP SDK — provides `ITransport` interface to implement |
+| `ICSharpCode.SharpZipLib` | Tar archive creation for Containerfile build context (mode 3 only) |
 
-## Execution Tiers
+## Mode 2: Package Runner
 
-### Tier 1: Pre-built Image
+The simplest and most common local mode. Covers `uvx`, `npx`, and similar tools that fetch-and-run packages with built-in caching.
 
-User provides an existing container image. No build step needed.
+### How it works
 
-- **Input:** Image reference (e.g. `ghcr.io/org/mcp-server:latest`), optional args, env, mounts
-- **Execution:** Create + attach container via API socket (stdin/stdout stream)
-- **Use case:** MCP servers that publish official Docker images
+No image build. Use a well-known public base image directly, pass the package command at runtime, and mount a persistent cache volume so packages are only downloaded once.
 
-### Tier 2: Auto-built Image (Primary UX)
+| Runner | Base Image | Cache Volume Path | Example Command |
+|--------|-----------|-------------------|-----------------|
+| `uvx` | `ghcr.io/astral-sh/uv:python3.12-slim` | `/root/.cache/uv` | `uvx music-assistant-mcp` |
+| `npx` | `node:22-slim` | `/root/.npm/_npx` | `npx @modelcontextprotocol/server-filesystem /data` |
 
-User provides a runtime, package dependencies, and a command. The multiplexer generates a Containerfile, builds it, and caches the result.
+### Container creation
 
-- **Input:** Runtime (`node`, `python`, `uvx`), packages list, command, optional env/mounts
-- **Execution:** Build image via API → create + attach container via API
-- **Use case:** NPX-based MCPs, pip-installed MCPs, any ecosystem with a package manager
-
-### Tier 3: Custom Containerfile (Future / Power Users)
-
-User provides a full Containerfile. Deferred to a later phase.
-
-## Supported Runtimes (Tier 2)
-
-| Runtime ID | Base Image | Install Command | Notes |
-|------------|-----------|-----------------|-------|
-| `node` | `node:22-slim` | `npm install -g {packages}` | For NPX-based MCP servers |
-| `python` | `python:3.12-slim` | `pip install --no-cache-dir {packages}` | For pip-installed MCPs |
-| `uvx` | `ghcr.io/astral-sh/uv:python3.12-slim` | `uv pip install {packages}` | Faster Python installs, better caching |
-
-### Containerfile Templates
-
-**Node:**
-```dockerfile
-FROM node:22-slim
-RUN npm install -g {packages}
-ENTRYPOINT [{command_as_json_array}]
+```csharp
+var createParams = new CreateContainerParameters
+{
+    Image = GetBaseImageForRunner(server.PackageRunner), // "ghcr.io/astral-sh/uv:python3.12-slim"
+    Cmd = ParseCommand(server.Command, server.Args),     // ["uvx", "music-assistant-mcp"]
+    Env = ParseEnvVars(server.Env),
+    OpenStdin = true,
+    AttachStdin = true,
+    AttachStdout = true,
+    AttachStderr = true,
+    Tty = false,
+    HostConfig = new HostConfig
+    {
+        AutoRemove = true,
+        Binds = BuildBinds(server),  // includes cache volume + user mounts
+    }
+};
 ```
 
-**Python:**
+### Cache volume
+
+A single named volume (`dumb-mcp-runner-cache`) is shared across ALL package runner servers of the same runner type. This means:
+- First start of any `uvx` MCP: downloads the package (~5-10s)
+- Every subsequent start (same or different `uvx` MCP): near-instant from shared cache
+
+### User-facing config
+
+| Field | Example |
+|-------|---------|
+| Runner | `uvx` (dropdown) |
+| Package / Command | `uvx music-assistant-mcp` |
+| Environment Variables | `MA_SERVER_URL=http://10.0.0.5:8095`, `MA_TOKEN=abc123` |
+| Volume Mounts | (optional, for MCPs needing host path access) |
+
+## Mode 3: Custom Containerfile
+
+For cases where package runners aren't enough — system dependencies, multiple packages, custom base images, or users who already have a pre-built image.
+
+### How it works
+
+User provides Containerfile content (or just an image name as a shortcut). The multiplexer builds it via the Docker API, caches by content hash, and runs it.
+
+### "I already have an image" shortcut
+
+If the user provides only an image reference (e.g. `ghcr.io/org/mcp-server:latest`), the Containerfile is implicitly:
+
+```dockerfile
+FROM ghcr.io/org/mcp-server:latest
+```
+
+No build needed — just pull and run. This covers the old "Tier 1 pre-built image" case.
+
+### Full Containerfile
+
+User pastes a complete Containerfile:
+
 ```dockerfile
 FROM python:3.12-slim
-RUN pip install --no-cache-dir {packages}
-ENTRYPOINT [{command_as_json_array}]
+RUN apt-get update && apt-get install -y git
+RUN pip install --no-cache-dir some-complex-mcp
+ENTRYPOINT ["python", "-m", "some_complex_mcp"]
 ```
 
-**uvx:**
-```dockerfile
-FROM ghcr.io/astral-sh/uv:python3.12-slim
-RUN uv pip install --system {packages}
-ENTRYPOINT [{command_as_json_array}]
-```
-
-## Image Caching Strategy
+### Image caching
 
 - **Tag format:** `dumb-mcp-local/<slug>:<content-hash>`
-- **Hash input:** SHA-256 of `(runtime + sorted packages + command + base image tag)`
-- **Rebuild trigger:** Only when the hash changes (i.e., user modifies config)
-- **Cache check:** On server enable/startup, check if tagged image exists → skip build if yes
-- **Pruning:** Offer a "rebuild image" button in the UI; old images can be pruned manually or on config change
+- **Hash input:** SHA-256 of the Containerfile content (lowercase hex, first 12 chars)
+- **Cache check:** `ListImagesAsync` filtering by tag — skip build if exists
+- **Build:** pack Containerfile into in-memory tar, call `BuildImageFromDockerfileAsync`
+- **Rebuild:** "Rebuild Image" button in UI forces a fresh build regardless of cache
 
-## Data Model Changes
+### User-facing config
+
+| Field | Example |
+|-------|---------|
+| Image (shortcut) | `ghcr.io/org/mcp-server:latest` |
+| — OR — Containerfile | (textarea with full Containerfile content) |
+| Command (optional override) | (overrides ENTRYPOINT if set) |
+| Environment Variables | `KEY=value` |
+| Volume Mounts | `/host/path:/container/path:ro` |
+
+## Data Model
 
 ### `McpServer` Transport Types
 
-Extend the `Transport` field enum:
+| Value | Mode | Description |
+|-------|------|-------------|
+| `remote_http` | 1 | Existing remote HTTP/SSE transport |
+| `stdio_package_runner` | 2 | Package runner (uvx/npx) with shared cache |
+| `stdio_container` | 3 | Custom Containerfile or pre-built image |
 
-| Value | Meaning |
-|-------|---------|
-| `remote_http` | Existing remote HTTP/SSE transport |
-| `stdio_container` | Container-based stdio (Tier 1 & 2) |
-| `stdio_native` | Native process stdio (bare-metal fallback) |
-
-### New/Updated Fields on `McpServer`
+### Fields on `McpServer`
 
 | Field | Type | Used By | Description |
 |-------|------|---------|-------------|
 | `Transport` | string | All | Transport type discriminator |
 | `Url` | string? | `remote_http` | Remote server URL |
 | `Headers` | string | `remote_http` | JSON object of HTTP headers |
-| `Command` | string? | `stdio_*` | Command to execute (entrypoint) |
-| `Args` | string? | `stdio_*` | JSON array of command arguments |
-| `Env` | string? | `stdio_*` | JSON object of environment variables |
-| `ContainerImage` | string? | `stdio_container` | Pre-built image reference (Tier 1) |
-| `ContainerRuntime` | string? | `stdio_container` | Runtime ID for auto-build (Tier 2): `node`, `python`, `uvx` |
-| `ContainerPackages` | string? | `stdio_container` | JSON array of packages to install |
-| `ContainerMounts` | string? | `stdio_container` | JSON array of volume mount specs |
-
-### Migration
-
-```sql
-ALTER TABLE servers ADD COLUMN container_image TEXT;
-ALTER TABLE servers ADD COLUMN container_runtime TEXT;
-ALTER TABLE servers ADD COLUMN container_packages TEXT DEFAULT '[]';
-ALTER TABLE servers ADD COLUMN container_mounts TEXT DEFAULT '[]';
-```
+| `Command` | string? | Modes 2 & 3 | Command to execute (entrypoint) |
+| `Args` | string? | Modes 2 & 3 | JSON array of command arguments |
+| `Env` | string? | Modes 2 & 3 | JSON object of environment variables |
+| `PackageRunner` | string? | Mode 2 | Runner ID: `uvx`, `npx` |
+| `ContainerImage` | string? | Mode 3 | Pre-built image reference (shortcut) |
+| `Containerfile` | string? | Mode 3 | Full Containerfile content |
+| `ContainerMounts` | string? | Modes 2 & 3 | JSON array of volume mount specs |
 
 ## Container Socket Connection
 
@@ -198,7 +229,7 @@ Stopped → Starting → Running → Stopping → Stopped
 
 ### Behavior
 
-- **Start on enable:** When a server is enabled (or on app startup for already-enabled servers), start the container process
+- **Start on enable:** When a server is enabled (or on app startup for already-enabled servers), start the container
 - **Stop on disable:** Graceful shutdown (stop container via API → SIGTERM, then SIGKILL after timeout)
 - **Restart on crash:** Exponential backoff (1s, 2s, 4s, 8s, ... max 60s), reset on successful connection lasting > 30s
 - **Health monitoring:** Periodic `ping` via MCP protocol; mark as unhealthy after N failures
@@ -218,8 +249,8 @@ public async Task ConnectAsync(McpServer server, CancellationToken ct = default)
     IMcpTransport transport = server.Transport switch
     {
         "remote_http" => CreateHttpTransport(server),
-        "stdio_container" => await CreateContainerStdioTransport(server, ct),
-        "stdio_native" => CreateNativeStdioTransport(server),
+        "stdio_package_runner" => await CreatePackageRunnerTransport(server, ct),
+        "stdio_container" => await CreateContainerTransport(server, ct),
         _ => throw new InvalidOperationException($"Unknown transport: {server.Transport}")
     };
 
@@ -227,12 +258,41 @@ public async Task ConnectAsync(McpServer server, CancellationToken ct = default)
     // ... store in _connections
 }
 
-private async Task<ITransport> CreateContainerStdioTransport(McpServer server, CancellationToken ct)
+private async Task<ITransport> CreatePackageRunnerTransport(McpServer server, CancellationToken ct)
 {
-    // Ensure image exists (build if Tier 2)
-    var image = await _imageBuilder.EnsureImageAsync(server, ct);
+    var image = GetBaseImageForRunner(server.PackageRunner);
+    var cacheMount = GetCacheMountForRunner(server.PackageRunner);
 
-    // Create container via Docker-compatible API
+    var mounts = ParseMounts(server.ContainerMounts);
+    mounts.Add(cacheMount); // shared cache volume
+
+    return await CreateAndAttachContainer(image, server, mounts, ct);
+}
+
+private async Task<ITransport> CreateContainerTransport(McpServer server, CancellationToken ct)
+{
+    string image;
+    if (server.ContainerImage is not null)
+    {
+        // Pre-built image shortcut
+        image = server.ContainerImage;
+    }
+    else if (server.Containerfile is not null)
+    {
+        // Build from Containerfile
+        image = await _imageBuilder.EnsureImageAsync(server, ct);
+    }
+    else
+    {
+        throw new InvalidOperationException($"Server {server.Slug}: no image or Containerfile configured.");
+    }
+
+    return await CreateAndAttachContainer(image, server, ParseMounts(server.ContainerMounts), ct);
+}
+
+private async Task<ITransport> CreateAndAttachContainer(
+    string image, McpServer server, List<string> binds, CancellationToken ct)
+{
     var createParams = new CreateContainerParameters
     {
         Image = image,
@@ -246,14 +306,13 @@ private async Task<ITransport> CreateContainerStdioTransport(McpServer server, C
         HostConfig = new HostConfig
         {
             AutoRemove = true,
-            Binds = ParseMounts(server.ContainerMounts),
+            Binds = binds,
         }
     };
 
     var container = await _containerService.Client
         .Containers.CreateContainerAsync(createParams, ct);
 
-    // Attach to stdin/stdout stream
     var stream = await _containerService.Client
         .Containers.AttachContainerAsync(container.ID, tty: false,
             new ContainerAttachParameters { Stdin = true, Stdout = true, Stream = true }, ct);
@@ -261,7 +320,6 @@ private async Task<ITransport> CreateContainerStdioTransport(McpServer server, C
     await _containerService.Client
         .Containers.StartContainerAsync(container.ID, null, ct);
 
-    // Wrap the multiplexed stream as an MCP transport
     return new ContainerStdioTransport(stream, container.ID, server.Slug);
 }
 ```
@@ -309,6 +367,25 @@ Volume=%t/podman/podman.sock:/run/podman/podman.sock
 Environment=CONTAINER_SOCKET=/run/podman/podman.sock
 ```
 
+The `%t` systemd specifier resolves automatically for both rootless and rootful deployments:
+
+| Mode | Unit type | `%t` | Resulting socket path |
+|------|-----------|------|-----------------------|
+| Rootless | User unit (`~/.config/containers/systemd/`) | `/run/user/1000` | `/run/user/1000/podman/podman.sock` |
+| Rootful | System unit (`/etc/containers/systemd/`) | `/run` | `/run/podman/podman.sock` |
+
+No changes to the quadlet file are needed between modes. However, you must ensure the Podman API socket service is enabled for the appropriate scope:
+
+```bash
+# Rootless
+systemctl --user enable --now podman.socket
+
+# Rootful
+systemctl enable --now podman.socket
+```
+
+For rootful deployments, the `CONTAINER_SOCKET` env var can also be omitted entirely — the multiplexer's auto-detection already tries `/run/podman/podman.sock` as a fallback.
+
 ### Bare-metal (no container deployment)
 
 If the multiplexer is running directly on a host with Docker or Podman installed, it will auto-detect the socket at the default path. No additional configuration needed.
@@ -326,64 +403,92 @@ If the multiplexer is running directly on a host with Docker or Podman installed
 
 ### Add/Edit Server Form
 
-When transport type is "Local Command":
+```
+┌─────────────────────────────────────────────────────────┐
+│ Server Type:                                            │
+│   ○ Remote HTTP                                         │
+│   ● Package Runner (uvx, npx)                          │
+│   ○ Custom Container                                    │
+│                                                         │
+│ Runner:   [uvx          ▾]                              │
+│ Command:  [uvx music-assistant-mcp                    ] │
+│                                                         │
+│ Environment Variables:                                  │
+│   [MA_SERVER_URL]  [http://10.0.0.5:8095]        [+ -] │
+│   [MA_TOKEN]       [abc123]                      [+ -] │
+│                                                         │
+│ Volume Mounts (optional):                               │
+│   Host Path          Container Path    Mode             │
+│   [/home/user/docs]  [/data]           [ro ▾] [×]      │
+│                                           [+ Add]       │
+│                                                         │
+│ [Test Connection]                          [Save]       │
+└─────────────────────────────────────────────────────────┘
+```
+
+For "Custom Container" mode:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ Server Type: ○ Remote HTTP  ● Local Command         │
-│                                                     │
-│ Execution Mode: ○ Pre-built Image  ● Auto-build    │
-│                                                     │
-│ Runtime:  [Node.js     ▾]                           │
-│ Packages: [@modelcontextprotocol/server-filesystem] │
-│ Command:  [npx @modelcontextprotocol/server-files…] │
-│                                                     │
-│ Environment Variables:                              │
-│   [KEY]  [VALUE]                              [+ -] │
-│                                                     │
-│ Volume Mounts:                                      │
-│   Host Path          Container Path    Mode         │
-│   [/home/user/docs]  [/data]           [ro ▾] [×]  │
-│                                           [+ Add]   │
-│                                                     │
-│ [Test Connection]                          [Save]   │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│ Server Type:                                            │
+│   ○ Remote HTTP                                         │
+│   ○ Package Runner (uvx, npx)                          │
+│   ● Custom Container                                    │
+│                                                         │
+│ ○ I have a pre-built image                              │
+│   Image: [ghcr.io/org/mcp-server:latest             ]   │
+│                                                         │
+│ ● I'll provide a Containerfile                          │
+│   ┌───────────────────────────────────────────────────┐ │
+│   │ FROM python:3.12-slim                             │ │
+│   │ RUN pip install --no-cache-dir my-mcp-server      │ │
+│   │ ENTRYPOINT ["python", "-m", "my_mcp"]            │ │
+│   └───────────────────────────────────────────────────┘ │
+│                                                         │
+│ Command (optional, overrides ENTRYPOINT):               │
+│   [                                                   ] │
+│                                                         │
+│ Environment Variables:                                  │
+│   [KEY]  [VALUE]                                 [+ -] │
+│                                                         │
+│ Volume Mounts (optional):                               │
+│   Host Path          Container Path    Mode             │
+│                                           [+ Add]       │
+│                                                         │
+│ [Test Connection]  [Rebuild Image]         [Save]       │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Server Detail Page
 
 Show container status:
-- Image tag + hash
 - Container state (running/stopped/restarting)
+- Image tag (for mode 3: includes content hash)
 - Uptime / restart count
-- "Rebuild Image" button
+- "Rebuild Image" button (mode 3 with Containerfile only)
 - "View Logs" (last N lines of container stderr)
 
 ## Implementation Phases
 
-### Phase S1: Foundation
+### Phase A: Package Runner Mode (Mode 2) ← DO THIS FIRST
 
-- [x] `ContainerRuntimeService` — detect podman/docker on startup
-- [x] Data model migration (new columns)
-- [x] Update `McpServer` model and EF mappings
+- [ ] Add `PackageRunner` field to `McpServer` model + migration
+- [ ] Add `Containerfile` field to `McpServer` model + migration
+- [ ] Rename/update transport type: `stdio_container` → support both `stdio_package_runner` and `stdio_container`
+- [ ] Implement package runner path in `UpstreamManager` (base image lookup + cache volume mount)
+- [ ] Create shared named volume `dumb-mcp-runner-cache-uvx` / `dumb-mcp-runner-cache-npx` on first use
+- [ ] UI: "Package Runner" server type with runner dropdown + command + env + mounts
+- [ ] Test with `uvx music-assistant-mcp`
 
-### Phase S2: Tier 1 (Pre-built Image)
+### Phase B: Custom Containerfile Mode (Mode 3)
 
-- [x] `StdioClientTransport` integration in `UpstreamManager`
-- [x] Container create + attach via `Docker.DotNet` API
-- [x] Basic lifecycle (start/stop)
-- [x] UI: transport type selector, image field, env/mounts config
-- [x] Test with a known MCP server image
+- [ ] `ImageBuilderService` — Containerfile → in-memory tar → `BuildImageFromDockerfileAsync`
+- [ ] Content-hash tagging and cache check via `ListImagesAsync`
+- [ ] UI: "Custom Container" type with image field OR Containerfile textarea
+- [ ] "Rebuild Image" button
+- [ ] Test with a custom Containerfile
 
-### Phase S3: Tier 2 (Auto-build)
-
-- [ ] `ImageBuilderService` — Containerfile template generation
-- [ ] Content-hash tagging and cache check
-- [ ] Image build via `Docker.DotNet` API (`BuildImageFromDockerfileAsync`)
-- [ ] UI: runtime selector, packages field, command field
-- [ ] Test with NPX and pip-based MCP servers
-
-### Phase S4: Lifecycle Management
+### Phase C: Lifecycle Management
 
 - [ ] `StdioLifecycleService` (BackgroundService)
 - [ ] Crash detection and restart with exponential backoff
@@ -391,24 +496,14 @@ Show container status:
 - [ ] Status reporting to UI (running/stopped/failed/restarting)
 - [ ] Graceful shutdown on app exit
 
-### Phase S5: Polish
-
-- [ ] "Rebuild Image" action in UI
-- [ ] Container log viewing (stderr capture)
-- [ ] "Test Connection" for stdio servers (build + run + handshake + teardown)
-- [ ] Documentation for socket mount setup
-- [x] Docker Compose + Podman Quadlet updates with socket mount examples
-
 ## Open Questions
 
-1. **Image garbage collection** — When a server's config changes and a new image is built, should we auto-remove the old one? Or leave it for manual pruning?
+1. **Cache volume naming** — One volume per runner type (`dumb-mcp-cache-uvx`, `dumb-mcp-cache-npx`)? Or one shared volume with subdirectories?
 
-2. **Concurrent builds** — If multiple stdio servers are enabled simultaneously on first boot, should image builds run in parallel or be serialized? (Parallel is faster but may thrash disk I/O.)
+2. **Image pull policy** — For mode 2, should we pull the base image on every start, or only if missing? Leaning toward: pull if missing, offer a "pull latest" button in UI.
 
-3. **Registry pull policy** — For Tier 1 (pre-built images), should we always pull latest, or respect the tag? Likely: pull on first connect, then use cached. Offer a "pull latest" button.
+3. **Network access** — Default to full network access for MCP containers? Or restrict with `--network=none` and require explicit opt-in? Leaning toward allow by default (MCPs commonly need outbound access).
 
-4. **Network access from MCP containers** — Some MCP servers need outbound internet (e.g., fetch MCP, web search MCP). Default to allowing network access? Or default-deny with explicit opt-in? Leaning toward allowing by default since the user explicitly configured the server.
+4. **Resource limits** — Set `--memory` / `--cpus` on spawned containers? Probably yes with generous defaults (512MB, 1 CPU) and per-server overrides.
 
-5. **Resource limits** — Should we set `--memory` / `--cpus` limits on spawned containers? Probably yes with generous defaults (e.g., 512MB RAM, 1 CPU) and per-server overrides.
-
-6. **Multi-arch** — Auto-built images inherit the host arch. This is fine for single-host deployments but worth noting for anyone running ARM vs x86.
+5. **Container naming** — Name containers `dumb-mcp-<slug>` for easy identification in `podman ps`?

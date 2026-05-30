@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Docker.DotNet.Models;
 using DumbMcpMultiplexer.Models;
 using ICSharpCode.SharpZipLib.Tar;
@@ -8,125 +7,73 @@ using ICSharpCode.SharpZipLib.Tar;
 namespace DumbMcpMultiplexer.Services;
 
 /// <summary>
-/// Builds container images from runtime templates for Tier 2 (auto-build) MCP servers.
-/// Generates a Containerfile, builds via the Docker socket API using an in-memory tar context,
-/// and caches the result by content hash.
+/// Builds container images from Containerfile content for stdio_container MCP servers.
+/// Builds via the Docker socket API using an in-memory tar context and caches by content hash.
 /// </summary>
 public sealed class ImageBuilderService(
     ContainerService containerService,
     ILogger<ImageBuilderService> logger)
 {
-    private static readonly Dictionary<string, RuntimeTemplate> RuntimeTemplates = new()
-    {
-        ["node"] = new RuntimeTemplate("node:22-slim", "npm install -g {packages}"),
-        ["python"] = new RuntimeTemplate("python:3.12-slim", "pip install --no-cache-dir {packages}"),
-        ["uvx"] = new RuntimeTemplate("ghcr.io/astral-sh/uv:python3.12-slim", "uv pip install --system {packages}"),
-    };
-
     /// <summary>
     /// Ensures an image exists for the given server configuration.
-    /// For Tier 1 (pre-built image), returns the image reference directly.
-    /// For Tier 2 (auto-build), checks cache by content hash and builds if needed.
+    /// For pre-built images, returns the image reference directly.
+    /// For Containerfile builds, checks cache by content hash and builds if needed.
     /// </summary>
     public async Task<string> EnsureImageAsync(McpServer server, CancellationToken ct = default)
     {
-        // Tier 1: pre-built image
+        // Pre-built image: return directly
         if (!string.IsNullOrWhiteSpace(server.ContainerImage))
         {
             return server.ContainerImage;
         }
 
-        // Tier 2: auto-build
-        if (string.IsNullOrWhiteSpace(server.ContainerRuntime))
+        // Containerfile build
+        if (!string.IsNullOrWhiteSpace(server.Containerfile))
         {
-            throw new InvalidOperationException(
-                "Container transport requires either a container image (Tier 1) or a runtime (Tier 2).");
-        }
+            var contentHash = ComputeContentHash(server.Containerfile);
+            var imageTag = $"dumb-mcp-local/{server.Slug}:{contentHash}";
 
-        if (!RuntimeTemplates.TryGetValue(server.ContainerRuntime, out var template))
-        {
-            throw new InvalidOperationException(
-                $"Unsupported container runtime: '{server.ContainerRuntime}'. Supported: {string.Join(", ", RuntimeTemplates.Keys)}");
-        }
+            if (await ImageExistsAsync(imageTag, ct))
+            {
+                logger.LogInformation("Image cache hit for {Slug}: {ImageTag}", server.Slug, imageTag);
+                return imageTag;
+            }
 
-        var packages = ParsePackages(server.ContainerPackages);
-        var containerfile = GenerateContainerfile(template, packages, server.Command, server.Args);
-        var contentHash = ComputeContentHash(server.ContainerRuntime, packages, server.Command, server.Args, template.BaseImage);
-        var imageTag = $"dumb-mcp-local/{server.Slug}:{contentHash}";
+            logger.LogInformation("Building image for {Slug}: {ImageTag}", server.Slug, imageTag);
+            await BuildImageAsync(imageTag, server.Containerfile, ct);
+            logger.LogInformation("Successfully built image for {Slug}: {ImageTag}", server.Slug, imageTag);
 
-        // Check if image already exists in cache
-        if (await ImageExistsAsync(imageTag, ct))
-        {
-            logger.LogInformation("Image cache hit for {Slug}: {ImageTag}", server.Slug, imageTag);
             return imageTag;
         }
 
-        // Build the image
-        logger.LogInformation("Building image for {Slug}: {ImageTag}", server.Slug, imageTag);
-        await BuildImageAsync(imageTag, containerfile, ct);
-        logger.LogInformation("Successfully built image for {Slug}: {ImageTag}", server.Slug, imageTag);
-
-        return imageTag;
+        throw new InvalidOperationException(
+            $"Server '{server.Slug}': stdio_container transport requires either ContainerImage or Containerfile.");
     }
 
     /// <summary>
     /// Forces a rebuild of the image for the given server, ignoring cache.
+    /// Only works for servers with a Containerfile.
     /// </summary>
     public async Task<string> RebuildImageAsync(McpServer server, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(server.ContainerRuntime))
+        if (string.IsNullOrWhiteSpace(server.Containerfile))
         {
-            throw new InvalidOperationException("Rebuild is only available for Tier 2 (auto-build) servers.");
+            throw new InvalidOperationException("Rebuild is only available for servers with a Containerfile.");
         }
 
-        if (!RuntimeTemplates.TryGetValue(server.ContainerRuntime, out var template))
-        {
-            throw new InvalidOperationException(
-                $"Unsupported container runtime: '{server.ContainerRuntime}'.");
-        }
-
-        var packages = ParsePackages(server.ContainerPackages);
-        var containerfile = GenerateContainerfile(template, packages, server.Command, server.Args);
-        var contentHash = ComputeContentHash(server.ContainerRuntime, packages, server.Command, server.Args, template.BaseImage);
+        var contentHash = ComputeContentHash(server.Containerfile);
         var imageTag = $"dumb-mcp-local/{server.Slug}:{contentHash}";
 
         logger.LogInformation("Rebuilding image for {Slug}: {ImageTag}", server.Slug, imageTag);
-        await BuildImageAsync(imageTag, containerfile, ct);
+        await BuildImageAsync(imageTag, server.Containerfile, ct);
         logger.LogInformation("Successfully rebuilt image for {Slug}: {ImageTag}", server.Slug, imageTag);
 
         return imageTag;
     }
 
-    /// <summary>
-    /// Gets the supported runtime IDs.
-    /// </summary>
-    public static IReadOnlyCollection<string> SupportedRuntimes => RuntimeTemplates.Keys.ToList();
-
-    internal static string GenerateContainerfile(RuntimeTemplate template, List<string> packages, string? command, string? argsJson)
+    internal static string ComputeContentHash(string containerfileContent)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine($"FROM {template.BaseImage}");
-
-        if (packages.Count > 0)
-        {
-            var packagesStr = string.Join(" ", packages);
-            sb.AppendLine($"RUN {template.InstallCommand.Replace("{packages}", packagesStr)}");
-        }
-
-        var entrypoint = BuildEntrypointJson(command, argsJson);
-        if (entrypoint is not null)
-        {
-            sb.AppendLine($"ENTRYPOINT {entrypoint}");
-        }
-
-        return sb.ToString();
-    }
-
-    internal static string ComputeContentHash(string runtime, List<string> packages, string? command, string? argsJson, string baseImage)
-    {
-        var sortedPackages = packages.OrderBy(p => p).ToList();
-        var hashInput = $"{runtime}|{baseImage}|{string.Join(",", sortedPackages)}|{command ?? ""}|{argsJson ?? ""}";
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(hashInput));
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(containerfileContent));
         return Convert.ToHexString(hashBytes)[..12].ToLowerInvariant();
     }
 
@@ -204,55 +151,6 @@ public sealed class ImageBuilderService(
         memoryStream.Position = 0;
         return memoryStream;
     }
-
-    private static List<string> ParsePackages(string? packagesJson)
-    {
-        if (string.IsNullOrWhiteSpace(packagesJson))
-        {
-            return [];
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<List<string>>(packagesJson) ?? [];
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-    }
-
-    private static string? BuildEntrypointJson(string? command, string? argsJson)
-    {
-        var parts = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(command))
-        {
-            parts.AddRange(CommandTokenizer.Tokenize(command));
-        }
-
-        if (!string.IsNullOrWhiteSpace(argsJson))
-        {
-            try
-            {
-                var args = JsonSerializer.Deserialize<List<string>>(argsJson) ?? [];
-                parts.AddRange(args.Where(a => !string.IsNullOrWhiteSpace(a)));
-            }
-            catch (JsonException)
-            {
-                // ignore
-            }
-        }
-
-        if (parts.Count == 0)
-        {
-            return null;
-        }
-
-        return JsonSerializer.Serialize(parts);
-    }
-
-    internal sealed record RuntimeTemplate(string BaseImage, string InstallCommand);
 
     private sealed class BuildProgress(ILogger logger) : IProgress<JSONMessage>
     {

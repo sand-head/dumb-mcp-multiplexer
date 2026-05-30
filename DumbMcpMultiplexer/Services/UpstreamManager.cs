@@ -22,6 +22,14 @@ public sealed class UpstreamManager(
     private readonly ConcurrentDictionary<string, McpClient> _connections = new();
     private readonly ConcurrentDictionary<string, ActiveConnection> _activeConnections = new();
 
+    private const string CacheVolumeBind = "dumb-mcp-runner-cache:/mnt/cache";
+
+    private static readonly Dictionary<string, (string Image, string CacheEnvVar, string CacheSubdir)> PackageRunners = new()
+    {
+        ["uvx"] = ("ghcr.io/astral-sh/uv:python3.12-slim", "UV_CACHE_DIR", "/mnt/cache/uv"),
+        ["npx"] = ("node:22-slim", "NPM_CONFIG_CACHE", "/mnt/cache/npx"),
+    };
+
     /// <summary>
     /// Gets the active client connections (slug → client).
     /// </summary>
@@ -94,7 +102,8 @@ public sealed class UpstreamManager(
         var enabledServers = await db.Servers
             .Where(s => s.Enabled &&
                 ((s.Transport == "remote_http" && s.Url != null) ||
-                 (s.Transport == "stdio_container" && (s.ContainerImage != null || s.ContainerRuntime != null))))
+                 (s.Transport == "stdio_package_runner" && s.PackageRunner != null) ||
+                 (s.Transport == "stdio_container" && (s.ContainerImage != null || s.Containerfile != null))))
             .ToListAsync(ct);
 
         var desiredSlugs = enabledServers.Select(s => s.Slug).ToHashSet();
@@ -148,6 +157,7 @@ public sealed class UpstreamManager(
         {
             "remote_http" => await CreateRemoteHttpConnectionAsync(server, ct),
             "stdio_container" => await CreateContainerConnectionAsync(server, ct),
+            "stdio_package_runner" => await CreatePackageRunnerConnectionAsync(server, ct),
             _ => throw new InvalidOperationException($"Unsupported transport: {server.Transport}")
         };
     }
@@ -211,6 +221,91 @@ public sealed class UpstreamManager(
             {
                 AutoRemove = true,
                 Binds = BuildMounts(server.ContainerMounts)
+            }
+        };
+
+        var created = await docker.Containers.CreateContainerAsync(createParams, ct);
+        var containerId = created.ID;
+        ContainerStdioTransport? transport = null;
+        try
+        {
+            var attachStream = await docker.Containers.AttachContainerAsync(
+                containerId,
+                false,
+                new ContainerAttachParameters
+                {
+                    Stdin = true,
+                    Stdout = true,
+                    Stderr = true,
+                    Stream = true
+                },
+                ct);
+
+            var started = await docker.Containers.StartContainerAsync(containerId, new ContainerStartParameters(), ct);
+            if (!started)
+            {
+                throw new InvalidOperationException($"Failed to start container '{containerId}'.");
+            }
+
+            transport = new ContainerStdioTransport(attachStream, server.Slug);
+            var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
+
+            return new ActiveConnection(client, transport, containerId, docker);
+        }
+        catch
+        {
+            if (transport is not null)
+            {
+                try { await transport.DisposeAsync(); } catch { /* best-effort */ }
+            }
+
+            await StopAndRemoveContainerAsync(docker, containerId);
+            throw;
+        }
+    }
+
+    private async Task<ActiveConnection> CreatePackageRunnerConnectionAsync(McpServer server, CancellationToken ct)
+    {
+        if (!containerService.IsAvailable || containerService.Client is null)
+        {
+            throw new InvalidOperationException("Container runtime socket is unavailable.");
+        }
+
+        if (string.IsNullOrWhiteSpace(server.PackageRunner))
+        {
+            throw new InvalidOperationException($"Server '{server.Slug}': PackageRunner is required for stdio_package_runner transport.");
+        }
+
+        if (!PackageRunners.TryGetValue(server.PackageRunner, out var runnerConfig))
+        {
+            throw new InvalidOperationException(
+                $"Unsupported package runner: '{server.PackageRunner}'. Supported: {string.Join(", ", PackageRunners.Keys)}");
+        }
+
+        var docker = containerService.Client;
+
+        // Build mounts: user mounts + shared cache volume
+        var binds = BuildMounts(server.ContainerMounts)?.ToList() ?? [];
+        binds.Add(CacheVolumeBind);
+
+        // Build env: user env + cache directory env var for this runner
+        var env = BuildEnvList(server.Env)?.ToList() ?? [];
+        env.Add($"{runnerConfig.CacheEnvVar}={runnerConfig.CacheSubdir}");
+
+        var createParams = new CreateContainerParameters
+        {
+            Image = runnerConfig.Image,
+            Cmd = BuildCommand(server.Command, server.Args),
+            Env = env,
+            OpenStdin = true,
+            AttachStdin = true,
+            AttachStdout = true,
+            AttachStderr = true,
+            Tty = false,
+            HostConfig = new HostConfig
+            {
+                AutoRemove = true,
+                Binds = binds,
             }
         };
 

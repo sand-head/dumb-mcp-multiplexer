@@ -57,6 +57,7 @@
                         @onchange="OnTransportChanged"
                         class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none">
                     <option value="remote_http">Remote HTTP</option>
+                    <option value="stdio_package_runner">Package Runner (uvx, npx)</option>
                     <option value="stdio_container">Container</option>
                 </select>
             </div>
@@ -107,78 +108,105 @@
                     </button>
                 </div>
             }
-            else if (_transport == "stdio_container")
+            else if (_transport == "stdio_package_runner")
             {
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Container Mode</label>
-                    <select value="@_containerMode"
-                            @onchange="OnContainerModeChanged"
+                    <label class="block text-sm font-medium text-white mb-1.5">Runner</label>
+                    <select value="@_packageRunner"
+                            @onchange="(e) => _packageRunner = e.Value?.ToString() ?? string.Empty"
                             class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none">
-                        <option value="image">Pre-built Image (Tier 1)</option>
-                        <option value="autobuild">Auto-build (Tier 2)</option>
+                        <option value="">— Select Runner —</option>
+                        <option value="uvx">uvx (Python/uv)</option>
+                        <option value="npx">npx (Node.js)</option>
                     </select>
                 </div>
-
-                @if (_containerMode == "image")
-                {
-                    <div>
-                        <label class="block text-sm font-medium text-white mb-1.5">Container Image</label>
-                        <input type="text"
-                               value="@_containerImage"
-                               @oninput="(e) => _containerImage = e.Value?.ToString() ?? string.Empty"
-                               placeholder="ghcr.io/org/mcp-server:latest"
-                               class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                    </div>
-                }
-                else
-                {
-                    <div>
-                        <label class="block text-sm font-medium text-white mb-1.5">Runtime</label>
-                        <select value="@_containerRuntime"
-                                @onchange="(e) => _containerRuntime = e.Value?.ToString() ?? string.Empty"
-                                class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none">
-                            <option value="">— Select Runtime —</option>
-                            <option value="node">Node (npm)</option>
-                            <option value="python">Python (pip)</option>
-                            <option value="uvx">Python (uv/uvx)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-white mb-1.5">Packages</label>
-                        <input type="text"
-                               value="@_containerPackagesInput"
-                               @oninput="(e) => _containerPackagesInput = e.Value?.ToString() ?? string.Empty"
-                               placeholder="package1 package2"
-                               class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                        <p class="mt-1 text-xs text-gray-500">Space-separated list of packages to install</p>
-                    </div>
-                }
 
                 <div>
                     <label class="block text-sm font-medium text-white mb-1.5">Command</label>
                     <input type="text"
                            value="@_command"
                            @oninput="(e) => _command = e.Value?.ToString() ?? string.Empty"
-                           placeholder="uvx"
+                           placeholder="uvx music-assistant-mcp"
                            class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                    <p class="mt-1 text-xs text-gray-500">Executable plus optional extra tokens (split on spaces).</p>
+                    <p class="mt-1 text-xs text-gray-500">Full command to execute (e.g. "uvx music-assistant-mcp" or "npx @@modelcontextprotocol/server-filesystem /data")</p>
                 </div>
+
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Args (JSON array)</label>
-                    <textarea rows="3"
-                              value="@_argsJson"
-                              @oninput="(e) => _argsJson = e.Value?.ToString() ?? string.Empty"
-                              placeholder="[\"music-assistant-mcp\"]"
-                              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
+                    <label class="block text-sm font-medium text-white mb-1.5">Environment Variables</label>
+                    <div class="space-y-2">
+                        @for (int i = 0; i < _envEntries.Count; i++)
+                        {
+                            var index = i;
+                            <div class="flex gap-2">
+                                <input type="text"
+                                       value="@_envEntries[index].Key"
+                                       @oninput="(e) => UpdateEnvKey(index, e.Value?.ToString() ?? string.Empty)"
+                                       placeholder="KEY"
+                                       class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                <input type="text"
+                                       value="@_envEntries[index].Value"
+                                       @oninput="(e) => UpdateEnvValue(index, e.Value?.ToString() ?? string.Empty)"
+                                       placeholder="value"
+                                       class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                <button type="button" @onclick="() => RemoveEnvEntry(index)"
+                                        class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-red-400 transition-colors">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                    <button type="button" @onclick="AddEnvEntry"
+                            class="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors">
+                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Add Variable
+                    </button>
                 </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Volume Mounts (optional)</label>
+                    <textarea rows="3"
+                              value="@_mountsJson"
+                              @oninput="(e) => _mountsJson = e.Value?.ToString() ?? string.Empty"
+                              placeholder='["/host/path:/container/path:ro"]'
+                              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
+                    <p class="mt-1 text-xs text-gray-500">JSON array of bind mounts. Cache volume is added automatically.</p>
+                </div>
+            }
+            else if (_transport == "stdio_container")
+            {
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Container Image</label>
+                    <input type="text"
+                           value="@_containerImage"
+                           @oninput="(e) => _containerImage = e.Value?.ToString() ?? string.Empty"
+                           placeholder="ghcr.io/org/mcp-server:latest"
+                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                    <p class="mt-1 text-xs text-gray-500">Pre-built image reference. Containerfile support coming soon.</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-white mb-1.5">Command (optional)</label>
+                    <input type="text"
+                           value="@_command"
+                           @oninput="(e) => _command = e.Value?.ToString() ?? string.Empty"
+                           placeholder="python -m my_mcp_server"
+                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                    <p class="mt-1 text-xs text-gray-500">Overrides the image ENTRYPOINT if set.</p>
+                </div>
+
                 <div>
                     <label class="block text-sm font-medium text-white mb-1.5">Env (JSON object)</label>
                     <textarea rows="3"
                               value="@_envJson"
                               @oninput="(e) => _envJson = e.Value?.ToString() ?? string.Empty"
-                              placeholder="{\"KEY\":\"VALUE\"}"
+                              placeholder="{&quot;KEY&quot;:&quot;VALUE&quot;}"
                               class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
                 </div>
+
                 <div>
                     <label class="block text-sm font-medium text-white mb-1.5">Mounts (JSON array)</label>
                     <textarea rows="3"
@@ -247,10 +275,9 @@
     private string _command = string.Empty;
     private string _argsJson = "[]";
     private string _envJson = "{}";
+    private string _packageRunner = string.Empty;
+    private List<EnvEntry> _envEntries = [];
     private string _containerImage = string.Empty;
-    private string _containerRuntime = string.Empty;
-    private string _containerPackagesInput = string.Empty;
-    private string _containerMode = "image";
     private string _mountsJson = "[]";
 
     private string? _slugError;
@@ -261,6 +288,12 @@
     private bool _slugManuallyEdited;
 
     private class HeaderEntry
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    private class EnvEntry
     {
         public string Key { get; set; } = string.Empty;
         public string Value { get; set; } = string.Empty;
@@ -280,30 +313,10 @@
         _command = Server.Command ?? string.Empty;
         _argsJson = string.IsNullOrWhiteSpace(Server.Args) ? "[]" : (Server.Args ?? "[]");
         _envJson = string.IsNullOrWhiteSpace(Server.Env) ? "{}" : (Server.Env ?? "{}");
+        _packageRunner = Server.PackageRunner ?? string.Empty;
         _containerImage = Server.ContainerImage ?? string.Empty;
-        _containerRuntime = Server.ContainerRuntime ?? string.Empty;
         _mountsJson = string.IsNullOrWhiteSpace(Server.ContainerMounts) ? "[]" : Server.ContainerMounts;
         _slugManuallyEdited = true;
-
-        // Determine container mode based on existing data
-        if (_transport == "stdio_container")
-        {
-            _containerMode = !string.IsNullOrWhiteSpace(Server.ContainerRuntime) ? "autobuild" : "image";
-        }
-
-        // Parse packages JSON array into space-separated input string
-        if (!string.IsNullOrWhiteSpace(Server.ContainerPackages) && Server.ContainerPackages != "[]")
-        {
-            try
-            {
-                var packages = JsonSerializer.Deserialize<List<string>>(Server.ContainerPackages);
-                _containerPackagesInput = packages is not null ? string.Join(" ", packages) : string.Empty;
-            }
-            catch
-            {
-                _containerPackagesInput = string.Empty;
-            }
-        }
 
         try
         {
@@ -316,6 +329,23 @@
         catch
         {
             _headers = [];
+        }
+
+        // Parse env JSON into key-value entries for the package runner UI
+        if (_transport == "stdio_package_runner" && !string.IsNullOrWhiteSpace(Server.Env))
+        {
+            try
+            {
+                var envDict = JsonSerializer.Deserialize<Dictionary<string, string>>(Server.Env);
+                if (envDict is not null)
+                {
+                    _envEntries = envDict.Select(kv => new EnvEntry { Key = kv.Key, Value = kv.Value }).ToList();
+                }
+            }
+            catch
+            {
+                _envEntries = [];
+            }
         }
     }
 
@@ -338,21 +368,6 @@
     private void OnTransportChanged(ChangeEventArgs e)
     {
         _transport = e.Value?.ToString() ?? "remote_http";
-        _testMessage = null;
-    }
-
-    private void OnContainerModeChanged(ChangeEventArgs e)
-    {
-        _containerMode = e.Value?.ToString() ?? "image";
-        if (_containerMode == "image")
-        {
-            _containerRuntime = string.Empty;
-            _containerPackagesInput = string.Empty;
-        }
-        else
-        {
-            _containerImage = string.Empty;
-        }
         _testMessage = null;
     }
 
@@ -379,6 +394,32 @@
         if (index >= 0 && index < _headers.Count)
         {
             _headers.RemoveAt(index);
+        }
+    }
+
+    private void UpdateEnvKey(int index, string value)
+    {
+        if (index >= 0 && index < _envEntries.Count)
+        {
+            _envEntries[index].Key = value;
+        }
+    }
+
+    private void UpdateEnvValue(int index, string value)
+    {
+        if (index >= 0 && index < _envEntries.Count)
+        {
+            _envEntries[index].Value = value;
+        }
+    }
+
+    private void AddEnvEntry() => _envEntries.Add(new EnvEntry());
+
+    private void RemoveEnvEntry(int index)
+    {
+        if (index >= 0 && index < _envEntries.Count)
+        {
+            _envEntries.RemoveAt(index);
         }
     }
 
@@ -460,9 +501,9 @@
                     draftServer.Args,
                     draftServer.Env,
                     draftServer.ContainerImage,
-                    draftServer.ContainerRuntime,
-                    draftServer.ContainerPackages,
-                    draftServer.ContainerMounts);
+                    draftServer.ContainerMounts,
+                    draftServer.PackageRunner,
+                    draftServer.Containerfile);
             }
             else
             {
@@ -476,9 +517,9 @@
                     draftServer.Args,
                     draftServer.Env,
                     draftServer.ContainerImage,
-                    draftServer.ContainerRuntime,
-                    draftServer.ContainerPackages,
-                    draftServer.ContainerMounts);
+                    draftServer.ContainerMounts,
+                    draftServer.PackageRunner,
+                    draftServer.Containerfile);
             }
 
             await OnSaved.InvokeAsync();
@@ -502,7 +543,6 @@
             Name = _name.Trim(),
             Transport = _transport.Trim(),
             Headers = "{}",
-            ContainerPackages = "[]",
             ContainerMounts = "[]"
         };
 
@@ -524,26 +564,51 @@
             return true;
         }
 
-        if (draftServer.Transport == "stdio_container")
+        if (draftServer.Transport == "stdio_package_runner")
         {
-            if (_containerMode == "image" && string.IsNullOrWhiteSpace(_containerImage))
+            if (string.IsNullOrWhiteSpace(_packageRunner))
             {
-                errorMessage = "Container image is required for pre-built image mode.";
+                errorMessage = "Runner is required for Package Runner transport.";
                 return false;
             }
 
-            if (_containerMode == "autobuild" && string.IsNullOrWhiteSpace(_containerRuntime))
+            if (string.IsNullOrWhiteSpace(_command))
             {
-                errorMessage = "Runtime is required for auto-build mode.";
+                errorMessage = "Command is required for Package Runner transport.";
+                return false;
+            }
+
+            if (!TryNormalizeJsonArray(_mountsJson, out var normalizedMountsJson, out errorMessage))
+            {
+                return false;
+            }
+
+            // Build env JSON from key-value entries
+            var envDict = _envEntries
+                .Where(e => !string.IsNullOrWhiteSpace(e.Key))
+                .ToDictionary(e => e.Key.Trim(), e => e.Value.Trim());
+
+            draftServer.Url = null;
+            draftServer.Headers = "{}";
+            draftServer.PackageRunner = _packageRunner.Trim();
+            draftServer.Command = _command.Trim();
+            draftServer.Args = null;
+            draftServer.Env = envDict.Count > 0 ? JsonSerializer.Serialize(envDict) : null;
+            draftServer.ContainerMounts = normalizedMountsJson;
+
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        if (draftServer.Transport == "stdio_container")
+        {
+            if (string.IsNullOrWhiteSpace(_containerImage))
+            {
+                errorMessage = "Container image is required.";
                 return false;
             }
 
             if (!TryNormalizeJsonObject(_envJson, out var normalizedEnvJson, out errorMessage))
-            {
-                return false;
-            }
-
-            if (!TryNormalizeJsonArray(_argsJson, out var normalizedArgsJson, out errorMessage))
             {
                 return false;
             }
@@ -553,24 +618,15 @@
                 return false;
             }
 
-            // Build packages JSON array from space-separated input
-            var packagesJson = "[]";
-            if (_containerMode == "autobuild" && !string.IsNullOrWhiteSpace(_containerPackagesInput))
-            {
-                var packages = _containerPackagesInput.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                packagesJson = JsonSerializer.Serialize(packages);
-            }
-
             draftServer.Url = null;
             draftServer.Headers = "{}";
-            draftServer.ContainerImage = _containerMode == "image" ? _containerImage.Trim() : null;
-            draftServer.ContainerRuntime = _containerMode == "autobuild" ? _containerRuntime.Trim() : null;
-            draftServer.ContainerPackages = packagesJson;
+            draftServer.ContainerImage = _containerImage.Trim();
             draftServer.Command = string.IsNullOrWhiteSpace(_command) ? null : _command.Trim();
-            draftServer.Args = normalizedArgsJson;
+            draftServer.Args = null;
             draftServer.Env = normalizedEnvJson;
             draftServer.ContainerMounts = normalizedMountsJson;
 
+            errorMessage = string.Empty;
             return true;
         }
 

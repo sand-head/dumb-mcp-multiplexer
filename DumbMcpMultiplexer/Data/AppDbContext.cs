@@ -27,9 +27,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.Command).HasColumnName("command");
             entity.Property(e => e.Args).HasColumnName("args");
             entity.Property(e => e.Env).HasColumnName("env");
+            entity.Property(e => e.PackageRunner).HasColumnName("package_runner");
+            entity.Property(e => e.Containerfile).HasColumnName("containerfile");
             entity.Property(e => e.ContainerImage).HasColumnName("container_image");
-            entity.Property(e => e.ContainerRuntime).HasColumnName("container_runtime");
-            entity.Property(e => e.ContainerPackages).HasColumnName("container_packages").IsRequired().HasDefaultValue("[]");
+
             entity.Property(e => e.ContainerMounts).HasColumnName("container_mounts").IsRequired().HasDefaultValue("[]");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();

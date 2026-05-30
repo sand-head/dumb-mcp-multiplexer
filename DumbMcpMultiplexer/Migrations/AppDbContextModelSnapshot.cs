@@ -58,16 +58,11 @@ namespace DumbMcpMultiplexer.Migrations
                         .HasDefaultValue("[]")
                         .HasColumnName("container_mounts");
 
-                    b.Property<string>("ContainerPackages")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("[]")
-                        .HasColumnName("container_packages");
 
-                    b.Property<string>("ContainerRuntime")
+
+                    b.Property<string>("Containerfile")
                         .HasColumnType("TEXT")
-                        .HasColumnName("container_runtime");
+                        .HasColumnName("containerfile");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
@@ -94,6 +89,10 @@ namespace DumbMcpMultiplexer.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("name");
+
+                    b.Property<string>("PackageRunner")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("package_runner");
 
                     b.Property<string>("Slug")
                         .IsRequired()

@@ -42,7 +42,7 @@ else
             </div>
         </div>
         <div class="flex items-center gap-2">
-            @if (!string.IsNullOrWhiteSpace(server.ContainerRuntime))
+            @if (!string.IsNullOrWhiteSpace(server.Containerfile))
             {
                 <button @onclick="RebuildImage"
                         disabled="@rebuilding"
@@ -248,25 +248,30 @@ else
     {
         "remote_http" => "Remote HTTP (SSE)",
         "remote_streamable_http" => "Remote Streamable HTTP",
+        "stdio_package_runner" => "Package Runner (stdio)",
         "stdio_container" => "Container (stdio)",
         _ => transport
     };
 
     private string EndpointLabel => server?.Transport switch
     {
-        "stdio_container" when !string.IsNullOrWhiteSpace(server.ContainerRuntime) => "Runtime",
-        "stdio_container" => "Container Image",
+        "stdio_package_runner" => "Runner",
+        "stdio_container" => "Image",
         _ => "URL"
     };
 
     private string EndpointValue =>
         server is null
             ? "—"
-            : server.Transport == "stdio_container"
-                ? (!string.IsNullOrWhiteSpace(server.ContainerRuntime)
-                    ? $"{server.ContainerRuntime} ({FormatPackages(server.ContainerPackages)})"
-                    : (string.IsNullOrWhiteSpace(server.ContainerImage) ? "—" : server.ContainerImage))
-                : (string.IsNullOrWhiteSpace(server.Url) ? "—" : server.Url);
+            : server.Transport == "stdio_package_runner"
+                ? $"{server.PackageRunner} — {server.Command ?? "(no command)"}"
+                : server.Transport == "stdio_container"
+                        ? (!string.IsNullOrWhiteSpace(server.ContainerImage)
+                            ? server.ContainerImage
+                            : !string.IsNullOrWhiteSpace(server.Containerfile)
+                                ? "(custom Containerfile)"
+                                : "—")
+                    : (string.IsNullOrWhiteSpace(server.Url) ? "—" : server.Url);
 
     private async Task ToggleEnabled()
     {
@@ -298,26 +303,6 @@ else
         finally
         {
             rebuilding = false;
-        }
-    }
-
-    private static string FormatPackages(string? packagesJson)
-    {
-        if (string.IsNullOrWhiteSpace(packagesJson) || packagesJson == "[]")
-        {
-            return "no packages";
-        }
-
-        try
-        {
-            var packages = JsonSerializer.Deserialize<List<string>>(packagesJson);
-            return packages is not null && packages.Count > 0
-                ? string.Join(", ", packages)
-                : "no packages";
-        }
-        catch
-        {
-            return "no packages";
         }
     }
 

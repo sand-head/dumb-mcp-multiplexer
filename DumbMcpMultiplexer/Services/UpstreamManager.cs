@@ -276,6 +276,9 @@ public sealed class UpstreamManager(
 
         var docker = containerService.Client;
 
+        // Ensure the image is available locally (pull if missing)
+        await EnsureImagePulledAsync(docker, resolvedImage, ct);
+
         var createParams = new CreateContainerParameters
         {
             Image = resolvedImage,
@@ -359,6 +362,9 @@ public sealed class UpstreamManager(
         }
 
         var docker = containerService.Client;
+
+        // Ensure the runner image is available locally (pull if missing)
+        await EnsureImagePulledAsync(docker, runnerConfig.Image, ct);
 
         // Build mounts: user mounts + shared cache volume
         var binds = BuildMounts(server.ContainerMounts)?.ToList() ?? [];
@@ -520,6 +526,42 @@ public sealed class UpstreamManager(
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    private async Task EnsureImagePulledAsync(Docker.DotNet.DockerClient docker, string image, CancellationToken ct)
+    {
+        // Check if the image already exists locally
+        try
+        {
+            await docker.Images.InspectImageAsync(image, ct);
+            return; // Image exists
+        }
+        catch (Docker.DotNet.DockerImageNotFoundException)
+        {
+            // Image not found locally, need to pull
+        }
+
+        logger.LogInformation("Pulling image: {Image}", image);
+        await docker.Images.CreateImageAsync(
+            new ImagesCreateParameters
+            {
+                FromImage = image
+            },
+            authConfig: null,
+            progress: new PullProgress(logger),
+            cancellationToken: ct);
+        logger.LogInformation("Successfully pulled image: {Image}", image);
+    }
+
+    private sealed class PullProgress(ILogger logger) : IProgress<JSONMessage>
+    {
+        public void Report(JSONMessage value)
+        {
+            if (!string.IsNullOrWhiteSpace(value.Status))
+            {
+                logger.LogDebug("Pull: {Status} {Progress}", value.Status, value.ProgressMessage);
+            }
         }
     }
 

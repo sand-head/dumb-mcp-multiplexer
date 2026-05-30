@@ -40,6 +40,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<ServerService>();
 builder.Services.AddSingleton<UpstreamManager>();
 builder.Services.AddSingleton<ContainerService>();
+builder.Services.AddSingleton<ImageBuilderService>();
 builder.Services.AddSingleton<DiscoveredToolsTracker>();
 builder.Services.AddMemoryCache();
 

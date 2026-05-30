@@ -110,19 +110,56 @@
             else if (_transport == "stdio_container")
             {
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Container Image</label>
-                    <input type="text"
-                           value="@_containerImage"
-                           @oninput="(e) => _containerImage = e.Value?.ToString() ?? string.Empty"
-                           placeholder="ghcr.io/org/mcp-server:latest"
-                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                    <label class="block text-sm font-medium text-white mb-1.5">Container Mode</label>
+                    <select value="@_containerMode"
+                            @onchange="OnContainerModeChanged"
+                            class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none">
+                        <option value="image">Pre-built Image (Tier 1)</option>
+                        <option value="autobuild">Auto-build (Tier 2)</option>
+                    </select>
                 </div>
+
+                @if (_containerMode == "image")
+                {
+                    <div>
+                        <label class="block text-sm font-medium text-white mb-1.5">Container Image</label>
+                        <input type="text"
+                               value="@_containerImage"
+                               @oninput="(e) => _containerImage = e.Value?.ToString() ?? string.Empty"
+                               placeholder="ghcr.io/org/mcp-server:latest"
+                               class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                    </div>
+                }
+                else
+                {
+                    <div>
+                        <label class="block text-sm font-medium text-white mb-1.5">Runtime</label>
+                        <select value="@_containerRuntime"
+                                @onchange="(e) => _containerRuntime = e.Value?.ToString() ?? string.Empty"
+                                class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none">
+                            <option value="">— Select Runtime —</option>
+                            <option value="node">Node (npm)</option>
+                            <option value="python">Python (pip)</option>
+                            <option value="uvx">Python (uv/uvx)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-white mb-1.5">Packages</label>
+                        <input type="text"
+                               value="@_containerPackagesInput"
+                               @oninput="(e) => _containerPackagesInput = e.Value?.ToString() ?? string.Empty"
+                               placeholder="package1 package2"
+                               class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                        <p class="mt-1 text-xs text-gray-500">Space-separated list of packages to install</p>
+                    </div>
+                }
+
                 <div>
                     <label class="block text-sm font-medium text-white mb-1.5">Command</label>
                     <input type="text"
                            value="@_command"
                            @oninput="(e) => _command = e.Value?.ToString() ?? string.Empty"
-                           placeholder="npx"
+                           placeholder="uvx music-assistant-mcp"
                            class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
                 </div>
                 <div>
@@ -210,6 +247,9 @@
     private string _argsJson = "[]";
     private string _envJson = "{}";
     private string _containerImage = string.Empty;
+    private string _containerRuntime = string.Empty;
+    private string _containerPackagesInput = string.Empty;
+    private string _containerMode = "image";
     private string _mountsJson = "[]";
 
     private string? _slugError;
@@ -240,8 +280,29 @@
         _argsJson = string.IsNullOrWhiteSpace(Server.Args) ? "[]" : (Server.Args ?? "[]");
         _envJson = string.IsNullOrWhiteSpace(Server.Env) ? "{}" : (Server.Env ?? "{}");
         _containerImage = Server.ContainerImage ?? string.Empty;
+        _containerRuntime = Server.ContainerRuntime ?? string.Empty;
         _mountsJson = string.IsNullOrWhiteSpace(Server.ContainerMounts) ? "[]" : Server.ContainerMounts;
         _slugManuallyEdited = true;
+
+        // Determine container mode based on existing data
+        if (_transport == "stdio_container")
+        {
+            _containerMode = !string.IsNullOrWhiteSpace(Server.ContainerRuntime) ? "autobuild" : "image";
+        }
+
+        // Parse packages JSON array into space-separated input string
+        if (!string.IsNullOrWhiteSpace(Server.ContainerPackages) && Server.ContainerPackages != "[]")
+        {
+            try
+            {
+                var packages = JsonSerializer.Deserialize<List<string>>(Server.ContainerPackages);
+                _containerPackagesInput = packages is not null ? string.Join(" ", packages) : string.Empty;
+            }
+            catch
+            {
+                _containerPackagesInput = string.Empty;
+            }
+        }
 
         try
         {
@@ -276,6 +337,12 @@
     private void OnTransportChanged(ChangeEventArgs e)
     {
         _transport = e.Value?.ToString() ?? "remote_http";
+        _testMessage = null;
+    }
+
+    private void OnContainerModeChanged(ChangeEventArgs e)
+    {
+        _containerMode = e.Value?.ToString() ?? "image";
         _testMessage = null;
     }
 
@@ -449,9 +516,15 @@
 
         if (draftServer.Transport == "stdio_container")
         {
-            if (string.IsNullOrWhiteSpace(_containerImage))
+            if (_containerMode == "image" && string.IsNullOrWhiteSpace(_containerImage))
             {
-                errorMessage = "Container image is required for container transport.";
+                errorMessage = "Container image is required for pre-built image mode.";
+                return false;
+            }
+
+            if (_containerMode == "autobuild" && string.IsNullOrWhiteSpace(_containerRuntime))
+            {
+                errorMessage = "Runtime is required for auto-build mode.";
                 return false;
             }
 
@@ -470,9 +543,19 @@
                 return false;
             }
 
+            // Build packages JSON array from space-separated input
+            var packagesJson = "[]";
+            if (_containerMode == "autobuild" && !string.IsNullOrWhiteSpace(_containerPackagesInput))
+            {
+                var packages = _containerPackagesInput.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                packagesJson = JsonSerializer.Serialize(packages);
+            }
+
             draftServer.Url = null;
             draftServer.Headers = "{}";
-            draftServer.ContainerImage = _containerImage.Trim();
+            draftServer.ContainerImage = _containerMode == "image" ? _containerImage.Trim() : null;
+            draftServer.ContainerRuntime = _containerMode == "autobuild" ? _containerRuntime.Trim() : null;
+            draftServer.ContainerPackages = packagesJson;
             draftServer.Command = string.IsNullOrWhiteSpace(_command) ? null : _command.Trim();
             draftServer.Args = normalizedArgsJson;
             draftServer.Env = normalizedEnvJson;

@@ -288,7 +288,7 @@ else
             rebuildSuccess = true;
             // Reconnect after rebuild
             await UpstreamManager.DisconnectAsync(server.Slug);
-            _ = Task.Run(() => UpstreamManager.SyncAsync());
+            await UpstreamManager.SyncAsync();
         }
         catch (Exception ex)
         {

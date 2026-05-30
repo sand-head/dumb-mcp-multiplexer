@@ -228,8 +228,7 @@ public sealed class ImageBuilderService(
 
         if (!string.IsNullOrWhiteSpace(command))
         {
-            parts.AddRange(command
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            parts.AddRange(CommandTokenizer.Tokenize(command));
         }
 
         if (!string.IsNullOrWhiteSpace(argsJson))

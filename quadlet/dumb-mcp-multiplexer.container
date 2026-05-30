@@ -10,6 +10,8 @@ PublishPort=0.0.0.0:7899:7899
 Volume=multiplexer-data.volume:/data:Z
 # Podman rootless socket mount (scoped to the user session) for stdio upstreams.
 Volume=%t/podman/podman.sock:/run/podman/podman.sock
+# Disable SELinux container separation — required for socket access in rootless Podman on SELinux-enforcing systems.
+SecurityLabelDisable=true
 Environment=CONTAINER_SOCKET=/run/podman/podman.sock
 # Name of the Podman named volume used as a shared cache for stdio package runner upstreams.
 # The volume is auto-created on first use.

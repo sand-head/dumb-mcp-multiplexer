@@ -34,8 +34,8 @@ builder.Host.UseSerilog((context, services, config) => config
 
 // Add services to the container.
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? "Data Source=app.db"));
+    options.UseSqlite(
+        builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=app.db"));
 
 builder.Services.AddScoped<ServerService>();
 builder.Services.AddSingleton<UpstreamManager>();
@@ -445,6 +445,9 @@ await containerService.InitializeAsync();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    // Clear any stale migration lock from a previous unclean shutdown.
+    // Safe for single-instance deployments; SQLite file-level locking prevents actual concurrency issues.
+    await db.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS \"__EFMigrationsLock\"");
     await db.Database.MigrateAsync();
 }
 

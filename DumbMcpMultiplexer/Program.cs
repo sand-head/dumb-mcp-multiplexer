@@ -3,6 +3,7 @@ using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Middleware;
 using DumbMcpMultiplexer.Models;
 using DumbMcpMultiplexer.Services;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using ModelContextProtocol;
@@ -36,6 +37,9 @@ builder.Host.UseSerilog((context, services, config) => config
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(
         builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=app.db"));
+
+builder.Services.AddDataProtection()
+    .PersistKeysToDbContext<AppDbContext>();
 
 builder.Services.AddScoped<ServerService>();
 builder.Services.AddSingleton<UpstreamManager>();

@@ -1,13 +1,15 @@
 using DumbMcpMultiplexer.Models;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace DumbMcpMultiplexer.Data;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options), IDataProtectionKeyContext
 {
     public DbSet<McpServer> Servers => Set<McpServer>();
     public DbSet<ServerCapability> ServerCapabilities => Set<ServerCapability>();
     public DbSet<AppSetting> Settings => Set<AppSetting>();
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

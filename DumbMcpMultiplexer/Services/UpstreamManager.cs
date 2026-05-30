@@ -271,7 +271,8 @@ public sealed class UpstreamManager(
 
         if (!string.IsNullOrWhiteSpace(command))
         {
-            args.Add(command.Trim());
+            args.AddRange(command
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         }
 
         if (!string.IsNullOrWhiteSpace(argsJson))

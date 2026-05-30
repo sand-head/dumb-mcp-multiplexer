@@ -287,6 +287,7 @@ else
             rebuildMessage = $"Image rebuilt successfully: {imageTag}";
             rebuildSuccess = true;
             // Reconnect after rebuild
+            await UpstreamManager.DisconnectAsync(server.Slug);
             _ = Task.Run(() => UpstreamManager.SyncAsync());
         }
         catch (Exception ex)

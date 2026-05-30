@@ -159,15 +159,16 @@
                     <input type="text"
                            value="@_command"
                            @oninput="(e) => _command = e.Value?.ToString() ?? string.Empty"
-                           placeholder="uvx music-assistant-mcp"
+                           placeholder="uvx"
                            class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                    <p class="mt-1 text-xs text-gray-500">Executable plus optional extra tokens (split on spaces).</p>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-white mb-1.5">Args (JSON array)</label>
                     <textarea rows="3"
                               value="@_argsJson"
                               @oninput="(e) => _argsJson = e.Value?.ToString() ?? string.Empty"
-                              placeholder="[\"@modelcontextprotocol/server-filesystem\", \"/workspace\"]"
+                              placeholder="[\"music-assistant-mcp\"]"
                               class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
                 </div>
                 <div>
@@ -343,6 +344,15 @@
     private void OnContainerModeChanged(ChangeEventArgs e)
     {
         _containerMode = e.Value?.ToString() ?? "image";
+        if (_containerMode == "image")
+        {
+            _containerRuntime = string.Empty;
+            _containerPackagesInput = string.Empty;
+        }
+        else
+        {
+            _containerImage = string.Empty;
+        }
         _testMessage = null;
     }
 

@@ -247,7 +247,7 @@ public sealed class UpstreamManager(
         {
             if (transport is not null)
             {
-                await transport.DisposeAsync();
+                try { await transport.DisposeAsync(); } catch { /* best-effort */ }
             }
 
             await StopAndRemoveContainerAsync(docker, containerId);
@@ -268,19 +268,20 @@ public sealed class UpstreamManager(
 
     private static IList<string>? BuildCommand(string? command, string? argsJson)
     {
-        if (string.IsNullOrWhiteSpace(command))
+        var args = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(command))
         {
-            return null;
+            args.Add(command.Trim());
         }
 
-        var cmd = new List<string> { command.Trim() };
         if (!string.IsNullOrWhiteSpace(argsJson))
         {
-            var args = JsonSerializer.Deserialize<List<string>>(argsJson) ?? [];
-            cmd.AddRange(args.Where(a => !string.IsNullOrWhiteSpace(a)));
+            var parsed = JsonSerializer.Deserialize<List<string>>(argsJson) ?? [];
+            args.AddRange(parsed.Where(a => !string.IsNullOrWhiteSpace(a)));
         }
 
-        return cmd;
+        return args.Count > 0 ? args : null;
     }
 
     private static IList<string>? BuildEnvList(string? envJson)

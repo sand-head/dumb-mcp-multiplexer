@@ -497,6 +497,16 @@
                 return false;
             }
 
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.Value.ValueKind != JsonValueKind.String)
+                {
+                    normalized = string.Empty;
+                    errorMessage = $"Env value for '{prop.Name}' must be a string.";
+                    return false;
+                }
+            }
+
             normalized = doc.RootElement.GetRawText();
             errorMessage = string.Empty;
             return true;

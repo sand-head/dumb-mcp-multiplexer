@@ -7,8 +7,11 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
-  <Target Name="BuildTailwind" BeforeTargets="Build" Condition="'$(SkipTailwind)' != 'true'">
+  <Target Name="BuildTailwind" BeforeTargets="AssignTargetPaths" Condition="'$(SkipTailwind)' != 'true'">
     <Exec Command="npx @tailwindcss/cli -i DumbMcpMultiplexer/Styles/app.css -o DumbMcpMultiplexer/wwwroot/app.css --minify" WorkingDirectory="$(MSBuildProjectDirectory)/.." />
+    <ItemGroup>
+      <Content Include="wwwroot/app.css" CopyToPublishDirectory="PreserveNewest" Condition="!@(Content->AnyHaveMetadataValue('Identity', 'wwwroot/app.css'))" />
+    </ItemGroup>
   </Target>
 
   <ItemGroup>

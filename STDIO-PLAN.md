@@ -363,17 +363,17 @@ Show container status:
 
 ### Phase S1: Foundation
 
-- [ ] `ContainerRuntimeService` — detect podman/docker on startup
-- [ ] Data model migration (new columns)
-- [ ] Update `McpServer` model and EF mappings
+- [x] `ContainerRuntimeService` — detect podman/docker on startup
+- [x] Data model migration (new columns)
+- [x] Update `McpServer` model and EF mappings
 
 ### Phase S2: Tier 1 (Pre-built Image)
 
-- [ ] `StdioClientTransport` integration in `UpstreamManager`
-- [ ] Container create + attach via `Docker.DotNet` API
-- [ ] Basic lifecycle (start/stop)
-- [ ] UI: transport type selector, image field, env/mounts config
-- [ ] Test with a known MCP server image
+- [x] `StdioClientTransport` integration in `UpstreamManager`
+- [x] Container create + attach via `Docker.DotNet` API
+- [x] Basic lifecycle (start/stop)
+- [x] UI: transport type selector, image field, env/mounts config
+- [x] Test with a known MCP server image
 
 ### Phase S3: Tier 2 (Auto-build)
 
@@ -397,7 +397,7 @@ Show container status:
 - [ ] Container log viewing (stderr capture)
 - [ ] "Test Connection" for stdio servers (build + run + handshake + teardown)
 - [ ] Documentation for socket mount setup
-- [ ] Quadlet/compose updates with socket mount examples
+- [x] Docker Compose + Podman Quadlet updates with socket mount examples
 
 ## Open Questions
 

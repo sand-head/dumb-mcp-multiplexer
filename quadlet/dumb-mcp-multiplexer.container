@@ -8,7 +8,7 @@ Image=ghcr.io/sand-head/dumb-mcp-multiplexer:latest
 ContainerName=dumb-mcp-multiplexer
 PublishPort=0.0.0.0:7899:7899
 Volume=multiplexer-data.volume:/data:Z
-# Podman rootless socket mount (scoped to the user session) for stdio_container upstreams.
+# Podman rootless socket mount (scoped to the user session) for stdio upstreams.
 Volume=%t/podman/podman.sock:/run/podman/podman.sock
 Environment=CONTAINER_SOCKET=/run/podman/podman.sock
 Tmpfs=/tmp:noexec,nosuid,size=64m

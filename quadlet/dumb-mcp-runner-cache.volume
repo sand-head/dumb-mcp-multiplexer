@@ -1,3 +1,0 @@
-# Shared cache for stdio package runner upstreams (uvx, npx).
-# Persists downloaded packages across server restarts and between different package runner servers.
-[Volume]

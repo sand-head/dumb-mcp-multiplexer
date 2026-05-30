@@ -11,6 +11,9 @@ Volume=multiplexer-data.volume:/data:Z
 # Podman rootless socket mount (scoped to the user session) for stdio upstreams.
 Volume=%t/podman/podman.sock:/run/podman/podman.sock
 Environment=CONTAINER_SOCKET=/run/podman/podman.sock
+# Name of the Podman named volume used as a shared cache for stdio package runner upstreams.
+# The volume is auto-created on first use.
+Environment=RUNNER_CACHE_VOLUME=dumb-mcp-runner-cache
 Tmpfs=/tmp:noexec,nosuid,size=64m
 ReadOnly=true
 NoNewPrivileges=true

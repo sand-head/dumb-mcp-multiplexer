@@ -19,11 +19,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - CONTAINER_SOCKET=/var/run/docker.sock
+      # Name of the Docker named volume used as a shared cache for stdio package runner upstreams.
+      # The volume is auto-created on first use. stdio package runner connections will fail if unset.
+      - RUNNER_CACHE_VOLUME=dumb-mcp-runner-cache
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
 
 volumes:
   multiplexer_data:
-  # Shared cache for stdio package runner upstreams (uvx, npx).
-  # Persists downloaded packages across server restarts and between different package runner servers.
-  dumb-mcp-runner-cache:

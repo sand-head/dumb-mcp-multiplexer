@@ -17,12 +17,11 @@ public sealed class UpstreamManager(
     IServiceScopeFactory scopeFactory,
     ContainerService containerService,
     ImageBuilderService imageBuilder,
+    IConfiguration configuration,
     ILogger<UpstreamManager> logger) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, McpClient> _connections = new();
     private readonly ConcurrentDictionary<string, ActiveConnection> _activeConnections = new();
-
-    private const string CacheVolumeBind = "dumb-mcp-runner-cache:/mnt/cache";
 
     private static readonly Dictionary<string, (string Image, string CacheEnvVar, string CacheSubdir)> PackageRunners = new()
     {
@@ -282,11 +281,18 @@ public sealed class UpstreamManager(
                 $"Unsupported package runner: '{server.PackageRunner}'. Supported: {string.Join(", ", PackageRunners.Keys)}");
         }
 
+        var cacheVolume = configuration["RunnerCacheVolume"] ?? configuration["RUNNER_CACHE_VOLUME"];
+        if (string.IsNullOrWhiteSpace(cacheVolume))
+        {
+            throw new InvalidOperationException(
+                "RUNNER_CACHE_VOLUME is not configured. Set this environment variable to a named volume (e.g. 'dumb-mcp-runner-cache') before using stdio package runner servers.");
+        }
+
         var docker = containerService.Client;
 
         // Build mounts: user mounts + shared cache volume
         var binds = BuildMounts(server.ContainerMounts)?.ToList() ?? [];
-        binds.Add(CacheVolumeBind);
+        binds.Add($"{cacheVolume}:/mnt/cache");
 
         // Build env: user env + cache directory env var for this runner
         var env = BuildEnvList(server.Env)?.ToList() ?? [];

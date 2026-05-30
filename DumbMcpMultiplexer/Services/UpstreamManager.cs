@@ -16,6 +16,7 @@ namespace DumbMcpMultiplexer.Services;
 public sealed class UpstreamManager(
     IServiceScopeFactory scopeFactory,
     ContainerService containerService,
+    ImageBuilderService imageBuilder,
     ILogger<UpstreamManager> logger) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, McpClient> _connections = new();
@@ -93,7 +94,7 @@ public sealed class UpstreamManager(
         var enabledServers = await db.Servers
             .Where(s => s.Enabled &&
                 ((s.Transport == "remote_http" && s.Url != null) ||
-                 (s.Transport == "stdio_container" && s.ContainerImage != null)))
+                 (s.Transport == "stdio_container" && (s.ContainerImage != null || s.ContainerRuntime != null))))
             .ToListAsync(ct);
 
         var desiredSlugs = enabledServers.Select(s => s.Slug).ToHashSet();
@@ -191,16 +192,14 @@ public sealed class UpstreamManager(
             throw new InvalidOperationException("Container runtime socket is unavailable.");
         }
 
-        if (string.IsNullOrWhiteSpace(server.ContainerImage))
-        {
-            throw new InvalidOperationException("Container transport requires a container image.");
-        }
+        // Resolve image: Tier 1 (pre-built) or Tier 2 (auto-build)
+        var resolvedImage = await imageBuilder.EnsureImageAsync(server, ct);
 
         var docker = containerService.Client;
 
         var createParams = new CreateContainerParameters
         {
-            Image = server.ContainerImage,
+            Image = resolvedImage,
             Cmd = BuildCommand(server.Command, server.Args),
             Env = BuildEnvList(server.Env),
             OpenStdin = true,
@@ -272,7 +271,7 @@ public sealed class UpstreamManager(
 
         if (!string.IsNullOrWhiteSpace(command))
         {
-            args.Add(command.Trim());
+            args.AddRange(CommandTokenizer.Tokenize(command));
         }
 
         if (!string.IsNullOrWhiteSpace(argsJson))

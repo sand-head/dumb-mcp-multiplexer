@@ -249,7 +249,7 @@ public sealed class ImageBuilderService(
             return null;
         }
 
-        return "[" + string.Join(", ", parts.Select(p => $"\"{p}\"")) + "]";
+        return JsonSerializer.Serialize(parts);
     }
 
     internal sealed record RuntimeTemplate(string BaseImage, string InstallCommand);

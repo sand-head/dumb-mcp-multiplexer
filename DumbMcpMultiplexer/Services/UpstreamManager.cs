@@ -25,7 +25,7 @@ public sealed class UpstreamManager(
 
     private static readonly Dictionary<string, (string Image, string CacheEnvVar, string CacheSubdir)> PackageRunners = new()
     {
-        ["uvx"] = ("ghcr.io/astral-sh/uv:python3.12-slim", "UV_CACHE_DIR", "/mnt/cache/uv"),
+        ["uvx"] = ("ghcr.io/astral-sh/uv:python3.12-trixie-slim", "UV_CACHE_DIR", "/mnt/cache/uv"),
         ["npx"] = ("node:22-slim", "NPM_CONFIG_CACHE", "/mnt/cache/npx"),
     };
 

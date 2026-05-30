@@ -12,6 +12,10 @@ public class McpServer
     public string? Command { get; set; }
     public string? Args { get; set; }
     public string? Env { get; set; }
+    public string? ContainerImage { get; set; }
+    public string? ContainerRuntime { get; set; }
+    public string ContainerPackages { get; set; } = "[]";
+    public string ContainerMounts { get; set; } = "[]";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

@@ -13,6 +13,12 @@ services:
       - "0.0.0.0:7899:7899"
     volumes:
       - multiplexer_data:/data:Z
+      # WARNING: Docker socket access grants container-management privileges on the host.
+      # Do not mount this as :ro; stdio_container upstreams need write access to create/start/stop/remove containers.
+      # Prefer Podman rootless + quadlet when possible.
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - CONTAINER_SOCKET=/var/run/docker.sock
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
 

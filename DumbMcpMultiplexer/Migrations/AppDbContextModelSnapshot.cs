@@ -47,6 +47,28 @@ namespace DumbMcpMultiplexer.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("command");
 
+                    b.Property<string>("ContainerImage")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("container_image");
+
+                    b.Property<string>("ContainerMounts")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("container_mounts");
+
+                    b.Property<string>("ContainerPackages")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("container_packages");
+
+                    b.Property<string>("ContainerRuntime")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("container_runtime");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("created_at");

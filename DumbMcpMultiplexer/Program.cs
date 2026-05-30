@@ -42,6 +42,7 @@ builder.Services.AddSingleton<UpstreamManager>();
 builder.Services.AddSingleton<ContainerService>();
 builder.Services.AddSingleton<ImageBuilderService>();
 builder.Services.AddSingleton<DiscoveredToolsTracker>();
+builder.Services.AddHostedService<UpstreamHealthCheckService>();
 builder.Services.AddMemoryCache();
 
 // Configure the MCP server with Streamable HTTP transport.

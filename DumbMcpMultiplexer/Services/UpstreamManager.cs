@@ -22,6 +22,7 @@ public sealed class UpstreamManager(
 {
     private readonly ConcurrentDictionary<string, McpClient> _connections = new();
     private readonly ConcurrentDictionary<string, ActiveConnection> _activeConnections = new();
+    private readonly ConcurrentDictionary<string, UpstreamHealthStatus> _healthStatuses = new();
 
     private static readonly Dictionary<string, (string Image, string CacheEnvVar, string CacheSubdir)> PackageRunners = new()
     {
@@ -33,6 +34,12 @@ public sealed class UpstreamManager(
     /// Gets the active client connections (slug → client).
     /// </summary>
     public IReadOnlyDictionary<string, McpClient> Connections => _connections;
+
+    /// <summary>
+    /// Gets the last known health status for each connected upstream.
+    /// Absent means not yet probed (assume healthy).
+    /// </summary>
+    public IReadOnlyDictionary<string, UpstreamHealthStatus> HealthStatuses => _healthStatuses;
 
     /// <summary>
     /// Connect to a single upstream MCP server.
@@ -50,6 +57,7 @@ public sealed class UpstreamManager(
 
         _activeConnections[server.Slug] = newConnection;
         _connections[server.Slug] = newConnection.Client;
+        _healthStatuses[server.Slug] = UpstreamHealthStatus.Healthy;
         logger.LogInformation("Successfully connected to upstream: {Slug}", server.Slug);
     }
 
@@ -59,6 +67,7 @@ public sealed class UpstreamManager(
     public async Task DisconnectAsync(string slug)
     {
         _connections.TryRemove(slug, out _);
+        _healthStatuses.TryRemove(slug, out _);
         if (_activeConnections.TryRemove(slug, out var connection))
         {
             await connection.DisposeAsync();
@@ -86,6 +95,67 @@ public sealed class UpstreamManager(
         finally
         {
             await connection.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Probes a single upstream connection with a short timeout.
+    /// Returns true if the connection is healthy, false if it failed or timed out.
+    /// </summary>
+    public async Task<bool> ProbeAsync(string slug, CancellationToken ct = default)
+    {
+        if (!_connections.TryGetValue(slug, out var client))
+        {
+            return false;
+        }
+
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probeCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await client.ListToolsAsync(cancellationToken: probeCts.Token);
+            _healthStatuses[slug] = UpstreamHealthStatus.Healthy;
+            return true;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Upstream probe timed out for {Slug}", slug);
+            _healthStatuses[slug] = UpstreamHealthStatus.Degraded;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Upstream probe failed for {Slug}", slug);
+            _healthStatuses[slug] = UpstreamHealthStatus.Degraded;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Reconnects a single upstream by slug, looking up its configuration from the database.
+    /// </summary>
+    public async Task<bool> ReconnectAsync(string slug, CancellationToken ct = default)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var server = await db.Servers.FirstOrDefaultAsync(s => s.Slug == slug, ct);
+
+        if (server is null || !server.Enabled)
+        {
+            logger.LogWarning("Cannot reconnect upstream {Slug}: server not found or not enabled", slug);
+            return false;
+        }
+
+        try
+        {
+            await ConnectAsync(server, ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to reconnect to upstream: {Slug}", slug);
+            return false;
         }
     }
 
@@ -519,4 +589,12 @@ public class ConnectionTestResult
     public string ServerVersion { get; set; } = string.Empty;
     public int ToolCount { get; set; }
     public List<string> ToolNames { get; set; } = [];
+}
+
+public enum UpstreamHealthStatus
+{
+    /// <summary>Connection is active and the last probe succeeded (or the server just connected).</summary>
+    Healthy,
+    /// <summary>The last probe failed or timed out; a reconnect attempt may be in progress.</summary>
+    Degraded,
 }

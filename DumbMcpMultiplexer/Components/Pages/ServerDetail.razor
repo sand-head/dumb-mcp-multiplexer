@@ -80,7 +80,7 @@ else
                 <dt class="text-sm text-gray-400 mb-1">Status</dt>
                 <dd class="flex items-center gap-2">
                     <span class="@StatusDotClass w-2.5 h-2.5 rounded-full"></span>
-                    <span class="@StatusTextClass font-medium">@(server.Enabled ? "Enabled" : "Disabled")</span>
+                    <span class="@StatusTextClass font-medium">@StatusText</span>
                 </dd>
             </div>
 
@@ -238,11 +238,39 @@ else
             ? "bg-yellow-600 hover:bg-yellow-700 text-white"
             : "bg-green-600 hover:bg-green-700 text-white";
 
-    private string StatusDotClass =>
-        server?.Enabled == true ? "bg-green-500" : "bg-red-500";
+    private string StatusDotClass => GetHealthStatus(server?.Slug ?? "") switch
+    {
+        _ when server?.Enabled != true              => "bg-gray-600",
+        UpstreamHealthStatus.Degraded               => "bg-amber-400",
+        _                                           => "bg-emerald-500",
+    };
 
-    private string StatusTextClass =>
-        server?.Enabled == true ? "text-green-400" : "text-red-400";
+    private string StatusTextClass => GetHealthStatus(server?.Slug ?? "") switch
+    {
+        _ when server?.Enabled != true              => "text-gray-400",
+        UpstreamHealthStatus.Degraded               => "text-amber-400",
+        _                                           => "text-green-400",
+    };
+
+    private UpstreamHealthStatus GetHealthStatus(string slug)
+    {
+        if (!UpstreamManager.Connections.ContainsKey(slug))
+            return UpstreamHealthStatus.Degraded;
+        return UpstreamManager.HealthStatuses.TryGetValue(slug, out var status)
+            ? status
+            : UpstreamHealthStatus.Healthy;
+    }
+
+    private string StatusText
+    {
+        get
+        {
+            if (server?.Enabled != true) return "Disabled";
+            return GetHealthStatus(server.Slug) == UpstreamHealthStatus.Degraded
+                ? "Degraded"
+                : "Connected";
+        }
+    }
 
     private static string FormatTransport(string transport) => transport switch
     {

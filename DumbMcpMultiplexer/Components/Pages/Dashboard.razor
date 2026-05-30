@@ -3,6 +3,7 @@
 @using DumbMcpMultiplexer.Models
 @using DumbMcpMultiplexer.Services
 @inject ServerService ServerService
+@inject UpstreamManager UpstreamManager
 
 <PageTitle>Dashboard — dumb-mcp-multiplexer</PageTitle>
 
@@ -56,13 +57,17 @@
                             @server.Name
                         </h2>
                         <span class="ml-2 mt-1 flex-shrink-0">
-                            @if (server.Enabled)
+                            @if (!server.Enabled)
                             {
-                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" title="Enabled"></span>
+                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-gray-600" title="Disabled"></span>
+                            }
+                            else if (GetHealthStatus(server.Slug) == UpstreamHealthStatus.Degraded)
+                            {
+                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" title="Degraded — last health check failed"></span>
                             }
                             else
                             {
-                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-gray-600" title="Disabled"></span>
+                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" title="Connected"></span>
                             }
                         </span>
                     </div>
@@ -113,5 +118,14 @@
     {
         _showAddModal = false;
         await LoadServers();
+    }
+
+    private UpstreamHealthStatus GetHealthStatus(string slug)
+    {
+        if (!UpstreamManager.Connections.ContainsKey(slug))
+            return UpstreamHealthStatus.Degraded;
+        return UpstreamManager.HealthStatuses.TryGetValue(slug, out var status)
+            ? status
+            : UpstreamHealthStatus.Healthy;
     }
 }

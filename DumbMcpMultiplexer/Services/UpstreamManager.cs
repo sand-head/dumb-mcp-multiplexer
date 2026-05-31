@@ -59,6 +59,11 @@ public sealed class UpstreamManager(
         _connections[server.Slug] = newConnection.Client;
         _healthStatuses[server.Slug] = UpstreamHealthStatus.Healthy;
         logger.LogInformation("Successfully connected to upstream: {Slug}", server.Slug);
+
+        // Fire-and-forget capability sync so the connection isn't delayed
+        var serverId = server.Id;
+        var slug = server.Slug;
+        _ = Task.Run(() => SyncCapabilitiesInBackgroundAsync(serverId, slug, newConnection.Client));
     }
 
     /// <summary>
@@ -526,6 +531,55 @@ public sealed class UpstreamManager(
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    private async Task SyncCapabilitiesInBackgroundAsync(string serverId, string slug, McpClient client)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var serverService = scope.ServiceProvider.GetRequiredService<ServerService>();
+
+        logger.LogInformation("Syncing capabilities for upstream: {Slug}", slug);
+        try
+        {
+            var tools = await client.ListToolsAsync();
+            await serverService.SyncCapabilitiesAsync(
+                serverId,
+                ServerCapability.ToolKind,
+                tools.Select(t => (t.Name, t.Description, (string?)t.JsonSchema.ToString())));
+            logger.LogInformation("Synced {Count} tools for upstream: {Slug}", tools.Count, slug);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to sync tools for upstream: {Slug}", slug);
+        }
+
+        try
+        {
+            var resources = await client.ListResourcesAsync();
+            await serverService.SyncCapabilitiesAsync(
+                serverId,
+                ServerCapability.ResourceKind,
+                resources.Select(r => (r.Name, r.Description, (string?)null)));
+            logger.LogInformation("Synced {Count} resources for upstream: {Slug}", resources.Count, slug);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to sync resources for upstream: {Slug}", slug);
+        }
+
+        try
+        {
+            var prompts = await client.ListPromptsAsync();
+            await serverService.SyncCapabilitiesAsync(
+                serverId,
+                ServerCapability.PromptKind,
+                prompts.Select(p => (p.Name, p.Description, (string?)null)));
+            logger.LogInformation("Synced {Count} prompts for upstream: {Slug}", prompts.Count, slug);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to sync prompts for upstream: {Slug}", slug);
         }
     }
 

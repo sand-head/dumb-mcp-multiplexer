@@ -138,37 +138,42 @@ public class ServerService(AppDbContext db)
 
     public async Task SyncToolCapabilitiesAsync(string serverId, IEnumerable<(string Name, string? Description, string? SchemaJson)> tools)
     {
-        var incomingTools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
-        var existingTools = await db.ServerCapabilities
-            .Where(c => c.ServerId == serverId && c.Kind == ToolCapabilityKind)
+        await SyncCapabilitiesAsync(serverId, ToolCapabilityKind, tools);
+    }
+
+    public async Task SyncCapabilitiesAsync(string serverId, string kind, IEnumerable<(string Name, string? Description, string? SchemaJson)> incoming)
+    {
+        var incomingMap = incoming.ToDictionary(t => t.Name, StringComparer.Ordinal);
+        var existing = await db.ServerCapabilities
+            .Where(c => c.ServerId == serverId && c.Kind == kind)
             .ToListAsync();
 
-        foreach (var existing in existingTools.Where(c => !incomingTools.ContainsKey(c.Name)))
+        foreach (var stale in existing.Where(c => !incomingMap.ContainsKey(c.Name)))
         {
-            db.ServerCapabilities.Remove(existing);
+            db.ServerCapabilities.Remove(stale);
         }
 
-        foreach (var incoming in incomingTools.Values)
+        foreach (var item in incomingMap.Values)
         {
-            var existing = existingTools.FirstOrDefault(c => c.Name == incoming.Name);
-            if (existing is null)
+            var record = existing.FirstOrDefault(c => c.Name == item.Name);
+            if (record is null)
             {
                 db.ServerCapabilities.Add(new ServerCapability
                 {
                     ServerId = serverId,
-                    Kind = ToolCapabilityKind,
-                    Name = incoming.Name,
+                    Kind = kind,
+                    Name = item.Name,
                     Enabled = true,
-                    Description = incoming.Description,
-                    SchemaJson = incoming.SchemaJson,
+                    Description = item.Description,
+                    SchemaJson = item.SchemaJson,
                     FetchedAt = DateTime.UtcNow
                 });
             }
             else
             {
-                existing.Description = incoming.Description;
-                existing.SchemaJson = incoming.SchemaJson;
-                existing.FetchedAt = DateTime.UtcNow;
+                record.Description = item.Description;
+                record.SchemaJson = item.SchemaJson;
+                record.FetchedAt = DateTime.UtcNow;
             }
         }
 

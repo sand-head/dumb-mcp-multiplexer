@@ -194,7 +194,8 @@ builder.Services.AddMcpServer(options =>
     var sw = System.Diagnostics.Stopwatch.StartNew();
 
     // Handle progressive discovery meta-tools
-    if (toolName == ProgressiveDiscoveryService.SearchToolName)
+    var progressiveDiscoveryEnabled = await ProgressiveDiscoveryService.IsEnabledAsync(db, ct);
+    if (progressiveDiscoveryEnabled && toolName == ProgressiveDiscoveryService.SearchToolName)
     {
         var query = request.Params?.Arguments?.TryGetValue("query", out var q) == true ? q.ToString() : "";
         var serverFilter2 = request.Params?.Arguments?.TryGetValue("server", out var s) == true ? s.ToString() : null;
@@ -243,7 +244,7 @@ builder.Services.AddMcpServer(options =>
         return result;
     }
 
-    if (toolName == ProgressiveDiscoveryService.ListCategoriesToolName)
+    if (progressiveDiscoveryEnabled && toolName == ProgressiveDiscoveryService.ListCategoriesToolName)
     {
         logger.LogInformation("[{SessionId}] list_tool_categories", sessionId);
         var catResult = await ProgressiveDiscoveryService.HandleListCategoriesAsync(upstream, logger, ct);
@@ -251,7 +252,7 @@ builder.Services.AddMcpServer(options =>
         return catResult;
     }
 
-    if (toolName == ProgressiveDiscoveryService.CallToolName)
+    if (progressiveDiscoveryEnabled && toolName == ProgressiveDiscoveryService.CallToolName)
     {
         var targetName = request.Params?.Arguments?.TryGetValue("name", out var n) == true ? n.ToString() : "";
         logger.LogInformation("[{SessionId}] call_tool: name={TargetTool}", sessionId, targetName);

@@ -369,6 +369,8 @@ public class ProfileService(AppDbContext db)
             }
         }
 
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
         var existingProfileServers = await db.ProfileServers
             .Where(ps => ps.ProfileId == profile.Id)
             .ToListAsync(cancellationToken);
@@ -378,6 +380,7 @@ public class ProfileService(AppDbContext db)
 
         db.ProfileCapabilities.RemoveRange(existingToolCapabilities);
         db.ProfileServers.RemoveRange(existingProfileServers);
+        await db.SaveChangesAsync(cancellationToken);
 
         foreach (var server in model.Servers.Where(s => s.Included))
         {
@@ -402,6 +405,7 @@ public class ProfileService(AppDbContext db)
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return profile.Id;
     }
 

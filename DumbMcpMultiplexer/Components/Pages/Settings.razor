@@ -73,6 +73,51 @@
         </button>
     </div>
 
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
+        <div class="mb-4">
+            <h2 class="text-xl font-semibold text-white">API Key</h2>
+            <p class="mt-1 text-sm text-gray-400">
+                When set, all requests to the <code class="text-gray-300">/mcp</code> endpoint must include the key as
+                <code class="text-gray-300">Authorization: Bearer &lt;key&gt;</code> or <code class="text-gray-300">?api_key=&lt;key&gt;</code>.
+                Leave unset to keep the endpoint open (e.g. for local-only use).
+            </p>
+        </div>
+
+        @if (_apiKey is null)
+        {
+            <p class="text-gray-500 italic text-sm mb-4">No API key configured. The /mcp endpoint is publicly accessible.</p>
+        }
+        else
+        {
+            <div class="flex items-center gap-2 mb-4">
+                <input type="@(_showApiKey ? "text" : "password")"
+                       value="@_apiKey"
+                       readonly
+                       class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white font-mono text-sm focus:outline-none" />
+                <button @onclick="() => _showApiKey = !_showApiKey"
+                        class="text-gray-400 hover:text-white px-3 py-2 text-sm border border-gray-700 rounded bg-gray-800 hover:bg-gray-700 transition-colors">
+                    @(_showApiKey ? "Hide" : "Show")
+                </button>
+            </div>
+        }
+
+        <div class="flex gap-2">
+            <button @onclick="GenerateApiKey"
+                    disabled="@_savingApiKey"
+                    class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded px-4 py-2 text-sm transition-colors">
+                @(_apiKey is null ? "Generate API Key" : "Regenerate")
+            </button>
+            @if (_apiKey is not null)
+            {
+                <button @onclick="RevokeApiKey"
+                        disabled="@_savingApiKey"
+                        class="bg-red-900/50 hover:bg-red-800 disabled:opacity-50 text-red-300 font-medium rounded px-4 py-2 text-sm transition-colors border border-red-800">
+                    Revoke
+                </button>
+            }
+        </div>
+    </div>
+
     @if (!string.IsNullOrEmpty(_successMessage))
     {
         <div class="mt-4 bg-emerald-900/30 border border-emerald-800 rounded-lg px-4 py-3 text-emerald-300 text-sm">
@@ -106,6 +151,9 @@
 @code {
     private List<string> _hosts = new();
     private bool _progressiveDiscovery;
+    private string? _apiKey;
+    private bool _showApiKey;
+    private bool _savingApiKey;
     private string? _successMessage;
     private string? _errorMessage;
     private bool _saving;
@@ -124,6 +172,9 @@
 
             var pdValue = await ServerService.GetSettingAsync("progressive_discovery");
             _progressiveDiscovery = pdValue == "true";
+
+            _apiKey = await ServerService.GetSettingAsync("api_key");
+            if (string.IsNullOrWhiteSpace(_apiKey)) _apiKey = null;
         }
         catch (Exception ex)
         {
@@ -158,6 +209,45 @@
         {
             _hosts[index] = value;
             ClearMessages();
+        }
+    }
+
+    private async Task GenerateApiKey()
+    {
+        _savingApiKey = true;
+        try
+        {
+            var bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+            _apiKey = Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            _showApiKey = true;
+            await ServerService.SetSettingAsync("api_key", _apiKey);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to generate API key: {ex.Message}";
+        }
+        finally
+        {
+            _savingApiKey = false;
+        }
+    }
+
+    private async Task RevokeApiKey()
+    {
+        _savingApiKey = true;
+        try
+        {
+            await ServerService.SetSettingAsync("api_key", string.Empty);
+            _apiKey = null;
+            _showApiKey = false;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to revoke API key: {ex.Message}";
+        }
+        finally
+        {
+            _savingApiKey = false;
         }
     }
 

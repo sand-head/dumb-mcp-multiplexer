@@ -590,8 +590,14 @@ else
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
+// CORS middleware — adds Access-Control headers for /mcp requests from allowed browser origins
+app.UseMiddleware<McpCorsMiddleware>();
+
 // Host guard middleware — validates Host header for /mcp requests
 app.UseMiddleware<HostGuardMiddleware>();
+
+// API key middleware — enforces Bearer token auth on /mcp when a key is configured
+app.UseMiddleware<ApiKeyMiddleware>();
 
 app.UseAntiforgery();
 

@@ -150,9 +150,42 @@ public class ProfileService(AppDbContext db)
             return new ActiveProfileContext();
         }
 
+        return await GetProfileContextByIdAsync(activeProfileId, cancellationToken);
+    }
+
+    public async Task<ActiveProfileContext> GetProfileContextAsync(string? profileReference, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(profileReference))
+        {
+            return new ActiveProfileContext();
+        }
+
+        var normalizedReference = profileReference.Trim();
         var profile = await db.Profiles
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == activeProfileId, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == normalizedReference, cancellationToken);
+
+        if (profile is null)
+        {
+            var lowered = normalizedReference.ToLowerInvariant();
+            profile = await db.Profiles
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Name.ToLower() == lowered, cancellationToken);
+        }
+
+        if (profile is null)
+        {
+            return new ActiveProfileContext();
+        }
+
+        return await GetProfileContextByIdAsync(profile.Id, cancellationToken);
+    }
+
+    private async Task<ActiveProfileContext> GetProfileContextByIdAsync(string profileId, CancellationToken cancellationToken = default)
+    {
+        var profile = await db.Profiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == profileId, cancellationToken);
         if (profile is null)
         {
             return new ActiveProfileContext();
@@ -160,7 +193,7 @@ public class ProfileService(AppDbContext db)
 
         var profileServers = await db.ProfileServers
             .AsNoTracking()
-            .Where(ps => ps.ProfileId == activeProfileId)
+            .Where(ps => ps.ProfileId == profile.Id)
             .Include(ps => ps.Server)
             .ToListAsync(cancellationToken);
 
@@ -176,7 +209,7 @@ public class ProfileService(AppDbContext db)
         var capabilityOverrides = new Dictionary<(string Slug, string Kind, string Name), bool>();
         var profileCapabilities = await db.ProfileCapabilities
             .AsNoTracking()
-            .Where(pc => pc.ProfileId == activeProfileId)
+            .Where(pc => pc.ProfileId == profile.Id)
             .ToListAsync(cancellationToken);
 
         foreach (var capability in profileCapabilities)
@@ -200,8 +233,6 @@ public class ProfileService(AppDbContext db)
 
     public async Task<List<ProfileSummary>> GetSummariesAsync(CancellationToken cancellationToken = default)
     {
-        var activeProfileId = await GetActiveProfileIdAsync(cancellationToken);
-
         return await db.Profiles
             .AsNoTracking()
             .OrderBy(p => p.Name)
@@ -210,7 +241,7 @@ public class ProfileService(AppDbContext db)
                 Id = p.Id,
                 Name = p.Name,
                 IsDefault = p.IsDefault,
-                IsActive = p.Id == activeProfileId,
+                IsActive = false,
                 IncludedServerCount = p.ProfileServers.Count
             })
             .ToListAsync(cancellationToken);

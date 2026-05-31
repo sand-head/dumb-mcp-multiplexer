@@ -3,7 +3,6 @@
 @using DumbMcpMultiplexer.Models
 @using DumbMcpMultiplexer.Services
 @inject ProfileService ProfileService
-@inject UpstreamManager UpstreamManager
 
 <PageTitle>Profiles - Dumb MCP Multiplexer</PageTitle>
 
@@ -11,7 +10,7 @@
     <div class="flex items-center justify-between">
         <div>
             <h2 class="text-2xl font-bold text-gray-100">Profiles</h2>
-            <p class="text-gray-400 mt-1">Choose which servers and tools are active together</p>
+            <p class="text-gray-400 mt-1">Choose which servers and tools are available for each profile endpoint</p>
         </div>
         <button @onclick="CreateProfile"
                 class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors">
@@ -19,16 +18,10 @@
         </button>
     </div>
 
-    <div class="flex items-center gap-2">
-        <button @onclick="UseAllServersAsync"
-                class="px-3 py-2 text-sm rounded-lg border border-gray-700 text-gray-200 hover:bg-gray-800 transition-colors">
-            Use all servers
-        </button>
-        @if (!string.IsNullOrWhiteSpace(_status))
-        {
-            <span class="text-sm text-emerald-300">@_status</span>
-        }
-    </div>
+    @if (!string.IsNullOrWhiteSpace(_status))
+    {
+        <div class="text-sm text-emerald-300">@_status</div>
+    }
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
@@ -43,22 +36,15 @@
                     <div>
                         <div class="flex items-center gap-2">
                             <h3 class="text-lg font-semibold text-gray-100">@profile.Name</h3>
-                            @if (profile.IsActive)
-                            {
-                                <span class="px-2 py-0.5 text-xs rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Active</span>
-                            }
                             @if (profile.IsDefault)
                             {
                                 <span class="px-2 py-0.5 text-xs rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Default</span>
                             }
                         </div>
                         <p class="text-sm text-gray-400 mt-1">@profile.IncludedServerCount server(s) included</p>
+                        <p class="text-xs text-gray-500 mt-1">Endpoint: <code class="text-gray-300">/mcp/@Uri.EscapeDataString(profile.Name)</code></p>
                     </div>
                     <div class="flex items-center gap-2">
-                        <button @onclick="() => ActivateProfileAsync(profile.Id)"
-                                class="px-3 py-1.5 text-sm rounded-lg border border-gray-700 text-gray-200 hover:bg-gray-800 transition-colors">
-                            Activate
-                        </button>
                         <button @onclick="() => EditProfileAsync(profile.Id)"
                                 class="px-3 py-1.5 text-sm rounded-lg border border-gray-700 text-gray-200 hover:bg-gray-800 transition-colors">
                             Edit
@@ -194,7 +180,6 @@
             await ProfileService.SaveAsync(_editor);
             _editor = null;
             await LoadProfilesAsync();
-            await UpstreamManager.SyncAsync();
             _status = "Profile saved.";
         }
         catch (Exception ex)
@@ -209,31 +194,8 @@
         _status = null;
 
         await ProfileService.DeleteAsync(profileId);
-        await UpstreamManager.SyncAsync();
         await LoadProfilesAsync();
         _status = "Profile deleted.";
-    }
-
-    private async Task ActivateProfileAsync(string profileId)
-    {
-        _error = null;
-        _status = null;
-
-        await ProfileService.SetActiveProfileAsync(profileId);
-        await UpstreamManager.SyncAsync();
-        await LoadProfilesAsync();
-        _status = "Profile activated.";
-    }
-
-    private async Task UseAllServersAsync()
-    {
-        _error = null;
-        _status = null;
-
-        await ProfileService.SetActiveProfileAsync(null);
-        await UpstreamManager.SyncAsync();
-        await LoadProfilesAsync();
-        _status = "Using all enabled servers.";
     }
 
     private void CancelEdit()

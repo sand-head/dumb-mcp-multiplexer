@@ -1,5 +1,8 @@
 ﻿@inherits LayoutComponentBase
 @using System.Reflection
+@using DumbMcpMultiplexer.Services
+@inject IServiceScopeFactory ScopeFactory
+@implements IDisposable
 
 <div class="min-h-screen flex flex-col bg-gray-950 text-gray-100">
     <header class="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10">
@@ -21,6 +24,9 @@
                     <a href="/settings" class="text-sm text-gray-400 hover:text-white transition-colors">
                         Settings
                     </a>
+                    <span class="text-xs text-gray-500">
+                        Active: <span class="text-gray-300">@(_activeProfileName ?? "All servers")</span>
+                    </span>
                 </nav>
             </div>
         </div>
@@ -47,4 +53,51 @@
             ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion
             .Split('+')[0] ?? "dev";
+    private string? _activeProfileName;
+    private PeriodicTimer? _profileTimer;
+    private CancellationTokenSource? _profileCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var profileService = scope.ServiceProvider.GetRequiredService<ProfileService>();
+        _activeProfileName = await profileService.GetActiveProfileNameAsync();
+        _profileCts = new CancellationTokenSource();
+        _profileTimer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        _ = PollActiveProfileAsync(_profileCts.Token);
+    }
+
+    private async Task PollActiveProfileAsync(CancellationToken cancellationToken)
+    {
+        if (_profileTimer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            while (await _profileTimer.WaitForNextTickAsync(cancellationToken))
+            {
+                await using var scope = ScopeFactory.CreateAsyncScope();
+                var profileService = scope.ServiceProvider.GetRequiredService<ProfileService>();
+                var activeProfileName = await profileService.GetActiveProfileNameAsync(cancellationToken);
+                if (activeProfileName != _activeProfileName)
+                {
+                    _activeProfileName = activeProfileName;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // ignored
+        }
+    }
+
+    public void Dispose()
+    {
+        _profileCts?.Cancel();
+        _profileTimer?.Dispose();
+        _profileCts?.Dispose();
+    }
 }

@@ -161,24 +161,17 @@ public class ProfileService(AppDbContext db)
         }
 
         var normalizedReference = profileReference.Trim();
+        var normalizedUpper = normalizedReference.ToUpperInvariant();
         var profile = await db.Profiles
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == normalizedReference, cancellationToken);
-
-        if (profile is null)
-        {
-            var lowered = normalizedReference.ToLowerInvariant();
-            profile = await db.Profiles
-                .AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Name.ToLower() == lowered, cancellationToken);
-        }
+            .FirstOrDefaultAsync(p => p.Name.ToUpper() == normalizedUpper, cancellationToken);
 
         if (profile is null)
         {
             return new ActiveProfileContext();
         }
 
-        return await GetProfileContextByIdAsync(profile.Id, cancellationToken);
+        return await GetProfileContextAsync(profile, cancellationToken);
     }
 
     private async Task<ActiveProfileContext> GetProfileContextByIdAsync(string profileId, CancellationToken cancellationToken = default)
@@ -190,6 +183,12 @@ public class ProfileService(AppDbContext db)
         {
             return new ActiveProfileContext();
         }
+
+        return await GetProfileContextAsync(profile, cancellationToken);
+    }
+
+    private async Task<ActiveProfileContext> GetProfileContextAsync(Profile profile, CancellationToken cancellationToken = default)
+    {
 
         var profileServers = await db.ProfileServers
             .AsNoTracking()

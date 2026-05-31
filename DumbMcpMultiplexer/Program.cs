@@ -51,6 +51,15 @@ builder.Services.AddHostedService<UpstreamHealthCheckService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 
+const string AllProfilesCacheKey = "__all__";
+static string? GetEndpointProfile(IServiceProvider services)
+{
+    var httpContextAccessor = services.GetRequiredService<IHttpContextAccessor>();
+    return httpContextAccessor.HttpContext?.Request.RouteValues.TryGetValue("profile", out var profileValue) == true
+        ? profileValue?.ToString()
+        : null;
+}
+
 // Configure the MCP server with Streamable HTTP transport.
 // We use custom handlers to dynamically aggregate tools/resources/prompts from upstream servers.
 builder.Services.AddMcpServer(options =>
@@ -95,11 +104,7 @@ builder.Services.AddMcpServer(options =>
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var profileService = request.Services!.GetRequiredService<ProfileService>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
-    var httpContextAccessor = request.Services!.GetRequiredService<IHttpContextAccessor>();
-    var endpointProfile = httpContextAccessor.HttpContext?.Request.RouteValues.TryGetValue("profile", out var profileValue) == true
-        ? profileValue?.ToString()
-        : null;
-    var profileContext = await profileService.GetProfileContextAsync(endpointProfile, ct);
+    var profileContext = await profileService.GetProfileContextAsync(GetEndpointProfile(request.Services!), ct);
 
     // If progressive discovery is enabled, return meta-tools + any previously discovered tools for this session
     if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct))
@@ -181,11 +186,7 @@ builder.Services.AddMcpServer(options =>
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var profileService = request.Services!.GetRequiredService<ProfileService>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
-    var httpContextAccessor = request.Services!.GetRequiredService<IHttpContextAccessor>();
-    var endpointProfile = httpContextAccessor.HttpContext?.Request.RouteValues.TryGetValue("profile", out var profileValue) == true
-        ? profileValue?.ToString()
-        : null;
-    var profileContext = await profileService.GetProfileContextAsync(endpointProfile, ct);
+    var profileContext = await profileService.GetProfileContextAsync(GetEndpointProfile(request.Services!), ct);
     var toolName = request.Params?.Name ?? "";
     var sessionId = request.Server.SessionId ?? "(no session)";
 
@@ -205,7 +206,7 @@ builder.Services.AddMcpServer(options =>
 
         // Cache search results so subsequent pages of the same query are fast
         var cache = request.Services!.GetRequiredService<IMemoryCache>();
-        var cacheKey = $"search:{profileContext.ProfileId ?? "__all__"}:{query}:{serverFilter2 ?? "*"}";
+        var cacheKey = $"search:{profileContext.ProfileId ?? AllProfilesCacheKey}:{query}:{serverFilter2 ?? "*"}";
         if (!cache.TryGetValue<IReadOnlyList<Tool>>(cacheKey, out var matchingTools) || matchingTools is null)
         {
             logger.LogInformation("[{SessionId}] search_tools: cache miss, querying upstreams...", sessionId);
@@ -377,11 +378,7 @@ builder.Services.AddMcpServer(options =>
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var profileService = request.Services!.GetRequiredService<ProfileService>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
-    var httpContextAccessor = request.Services!.GetRequiredService<IHttpContextAccessor>();
-    var endpointProfile = httpContextAccessor.HttpContext?.Request.RouteValues.TryGetValue("profile", out var profileValue) == true
-        ? profileValue?.ToString()
-        : null;
-    var profileContext = await profileService.GetProfileContextAsync(endpointProfile, ct);
+    var profileContext = await profileService.GetProfileContextAsync(GetEndpointProfile(request.Services!), ct);
     var resources = new List<Resource>();
     var connectedSlugs = upstream.Connections.Keys.ToList();
 
@@ -434,11 +431,7 @@ builder.Services.AddMcpServer(options =>
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var profileService = request.Services!.GetRequiredService<ProfileService>();
-    var httpContextAccessor = request.Services!.GetRequiredService<IHttpContextAccessor>();
-    var endpointProfile = httpContextAccessor.HttpContext?.Request.RouteValues.TryGetValue("profile", out var profileValue) == true
-        ? profileValue?.ToString()
-        : null;
-    var profileContext = await profileService.GetProfileContextAsync(endpointProfile, ct);
+    var profileContext = await profileService.GetProfileContextAsync(GetEndpointProfile(request.Services!), ct);
 
     var split = Namespace.SplitUri(request.Params?.Uri ?? "");
     if (split is null)
@@ -473,11 +466,7 @@ builder.Services.AddMcpServer(options =>
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var profileService = request.Services!.GetRequiredService<ProfileService>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
-    var httpContextAccessor = request.Services!.GetRequiredService<IHttpContextAccessor>();
-    var endpointProfile = httpContextAccessor.HttpContext?.Request.RouteValues.TryGetValue("profile", out var profileValue) == true
-        ? profileValue?.ToString()
-        : null;
-    var profileContext = await profileService.GetProfileContextAsync(endpointProfile, ct);
+    var profileContext = await profileService.GetProfileContextAsync(GetEndpointProfile(request.Services!), ct);
     var prompts = new List<Prompt>();
     var connectedSlugs = upstream.Connections.Keys.ToList();
 
@@ -528,11 +517,7 @@ builder.Services.AddMcpServer(options =>
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
     var db = request.Services!.GetRequiredService<AppDbContext>();
     var profileService = request.Services!.GetRequiredService<ProfileService>();
-    var httpContextAccessor = request.Services!.GetRequiredService<IHttpContextAccessor>();
-    var endpointProfile = httpContextAccessor.HttpContext?.Request.RouteValues.TryGetValue("profile", out var profileValue) == true
-        ? profileValue?.ToString()
-        : null;
-    var profileContext = await profileService.GetProfileContextAsync(endpointProfile, ct);
+    var profileContext = await profileService.GetProfileContextAsync(GetEndpointProfile(request.Services!), ct);
 
     var split = Namespace.Split(request.Params?.Name ?? "");
     if (split is null)

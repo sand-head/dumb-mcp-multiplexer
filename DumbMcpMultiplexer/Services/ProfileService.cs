@@ -372,11 +372,11 @@ public class ProfileService(AppDbContext db)
         var existingProfileServers = await db.ProfileServers
             .Where(ps => ps.ProfileId == profile.Id)
             .ToListAsync(cancellationToken);
-        var existingProfileCapabilities = await db.ProfileCapabilities
-            .Where(pc => pc.ProfileId == profile.Id)
+        var existingToolCapabilities = await db.ProfileCapabilities
+            .Where(pc => pc.ProfileId == profile.Id && pc.Kind == ServerCapability.ToolKind)
             .ToListAsync(cancellationToken);
 
-        db.ProfileCapabilities.RemoveRange(existingProfileCapabilities);
+        db.ProfileCapabilities.RemoveRange(existingToolCapabilities);
         db.ProfileServers.RemoveRange(existingProfileServers);
 
         foreach (var server in model.Servers.Where(s => s.Included))

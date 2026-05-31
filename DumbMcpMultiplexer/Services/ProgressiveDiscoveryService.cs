@@ -155,7 +155,7 @@ public class ProgressiveDiscoveryService
                     {
                         Name = Namespace.Prefix(slug, tool.Name),
                         Description = tool.Description,
-                        InputSchema = tool.JsonSchema
+                        InputSchema = JsonSchemaSanitizer.Sanitize(tool.JsonSchema)
                     };
 
                     // Empty query: return everything unsorted

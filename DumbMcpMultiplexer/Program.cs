@@ -168,7 +168,7 @@ builder.Services.AddMcpServer(options =>
                 {
                     Name = Namespace.Prefix(slug, tool.Name),
                     Description = tool.Description,
-                    InputSchema = tool.JsonSchema
+                    InputSchema = JsonSchemaSanitizer.Sanitize(tool.JsonSchema)
                 });
             }
         }

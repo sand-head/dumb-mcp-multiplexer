@@ -8,6 +8,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<McpServer> Servers => Set<McpServer>();
     public DbSet<ServerCapability> ServerCapabilities => Set<ServerCapability>();
+    public DbSet<Profile> Profiles => Set<Profile>();
+    public DbSet<ProfileServer> ProfileServers => Set<ProfileServer>();
+    public DbSet<ProfileCapability> ProfileCapabilities => Set<ProfileCapability>();
     public DbSet<AppSetting> Settings => Set<AppSetting>();
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -68,6 +71,60 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
             entity.Property(e => e.Key).HasColumnName("key");
             entity.Property(e => e.Value).HasColumnName("value").IsRequired();
+        });
+
+        modelBuilder.Entity<Profile>(entity =>
+        {
+            entity.ToTable("profiles");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Name).HasColumnName("name").IsRequired();
+            entity.Property(e => e.IsDefault).HasColumnName("is_default").IsRequired().HasDefaultValue(false);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+
+            entity.HasIndex(e => e.Name).IsUnique();
+        });
+
+        modelBuilder.Entity<ProfileServer>(entity =>
+        {
+            entity.ToTable("profile_servers");
+
+            entity.HasKey(e => new { e.ProfileId, e.ServerId });
+
+            entity.Property(e => e.ProfileId).HasColumnName("profile_id");
+            entity.Property(e => e.ServerId).HasColumnName("server_id");
+            entity.Property(e => e.Enabled).HasColumnName("enabled").IsRequired().HasDefaultValue(true);
+
+            entity.HasOne(e => e.Profile)
+                .WithMany(p => p.ProfileServers)
+                .HasForeignKey(e => e.ProfileId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Server)
+                .WithMany(s => s.ProfileServers)
+                .HasForeignKey(e => e.ServerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProfileCapability>(entity =>
+        {
+            entity.ToTable("profile_capabilities");
+
+            entity.HasKey(e => new { e.ProfileId, e.ServerId, e.Kind, e.Name });
+
+            entity.Property(e => e.ProfileId).HasColumnName("profile_id");
+            entity.Property(e => e.ServerId).HasColumnName("server_id");
+            entity.Property(e => e.Kind).HasColumnName("kind");
+            entity.Property(e => e.Name).HasColumnName("name");
+            entity.Property(e => e.Enabled).HasColumnName("enabled").IsRequired().HasDefaultValue(true);
+
+            entity.HasOne(e => e.ProfileServer)
+                .WithMany(ps => ps.Capabilities)
+                .HasForeignKey(e => new { e.ProfileId, e.ServerId })
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

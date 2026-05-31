@@ -118,6 +118,7 @@ public class ProgressiveDiscoveryService
         AppDbContext db,
         string query,
         string? serverFilter,
+        ProfileService.ActiveProfileContext profileContext,
         ILogger logger,
         CancellationToken ct)
     {
@@ -138,13 +139,16 @@ public class ProgressiveDiscoveryService
         {
             if (serverFilter is not null && !slug.Equals(serverFilter, StringComparison.OrdinalIgnoreCase))
                 continue;
+            if (!profileContext.IsServerEnabled(slug))
+                continue;
 
             try
             {
                 var upstreamTools = await client.ListToolsAsync(cancellationToken: ct);
                 foreach (var tool in upstreamTools)
                 {
-                    if (disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name))
+                    var globalEnabled = !(disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name));
+                    if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.ToolKind, tool.Name, globalEnabled))
                         continue;
 
                     var prefixedTool = new Tool
@@ -250,10 +254,11 @@ public class ProgressiveDiscoveryService
         AppDbContext db,
         string query,
         string? serverFilter,
+        ProfileService.ActiveProfileContext profileContext,
         ILogger logger,
         CancellationToken ct)
     {
-        var matchingTools = await GetMatchingToolsAsync(upstream, db, query, serverFilter, logger, ct);
+        var matchingTools = await GetMatchingToolsAsync(upstream, db, query, serverFilter, profileContext, logger, ct);
         return FormatSearchResult(matchingTools).Result;
     }
 

@@ -167,6 +167,8 @@ public sealed class UpstreamManager(
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var profileService = scope.ServiceProvider.GetRequiredService<ProfileService>();
+        var profileContext = await profileService.GetActiveProfileContextAsync(ct);
 
         var enabledServers = await db.Servers
             .Where(s => s.Enabled &&
@@ -174,6 +176,13 @@ public sealed class UpstreamManager(
                  (s.Transport == "stdio_package_runner" && s.PackageRunner != null) ||
                  (s.Transport == "stdio_container" && (s.ContainerImage != null || s.Containerfile != null))))
             .ToListAsync(ct);
+
+        if (profileContext.HasActiveProfile)
+        {
+            enabledServers = enabledServers
+                .Where(server => profileContext.IsServerEnabled(server.Slug))
+                .ToList();
+        }
 
         var desiredSlugs = enabledServers.Select(s => s.Slug).ToHashSet();
 

@@ -3,6 +3,9 @@ namespace DumbMcpMultiplexer.Models;
 public class ServerCapability
 {
     public const string ToolKind = "tool";
+    public const string ResourceKind = "resource";
+    public const string PromptKind = "prompt";
+    public const string ResourceTemplateKind = "resource_template";
 
     public string ServerId { get; set; } = string.Empty;
     public string Kind { get; set; } = string.Empty;

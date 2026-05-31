@@ -42,6 +42,7 @@ builder.Services.AddDataProtection()
     .PersistKeysToDbContext<AppDbContext>();
 
 builder.Services.AddScoped<ServerService>();
+builder.Services.AddScoped<ProfileService>();
 builder.Services.AddSingleton<UpstreamManager>();
 builder.Services.AddSingleton<ContainerService>();
 builder.Services.AddSingleton<ImageBuilderService>();
@@ -91,15 +92,36 @@ builder.Services.AddMcpServer(options =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
     var db = request.Services!.GetRequiredService<AppDbContext>();
+    var profileService = request.Services!.GetRequiredService<ProfileService>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+    var profileContext = await profileService.GetActiveProfileContextAsync(ct);
 
     // If progressive discovery is enabled, return meta-tools + any previously discovered tools for this session
     if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct))
     {
         var tracker = request.Services!.GetRequiredService<DiscoveredToolsTracker>();
         var sessionId = request.Server.SessionId ?? "";
+        var connectedSlugsForProgressive = upstream.Connections.Keys.ToList();
+        var globallyDisabledTools = await db.ServerCapabilities
+            .Where(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && connectedSlugsForProgressive.Contains(c.Server.Slug))
+            .Select(c => new { c.Server.Slug, c.Name })
+            .ToListAsync(ct);
+        var globallyDisabledToolSet = globallyDisabledTools
+            .Select(x => (x.Slug, x.Name))
+            .ToHashSet();
+
         var tools2 = new List<Tool>(ProgressiveDiscoveryService.GetMetaTools());
-        tools2.AddRange(tracker.GetDiscoveredTools(sessionId));
+        tools2.AddRange(tracker.GetDiscoveredTools(sessionId).Where(tool =>
+        {
+            var split = Namespace.Split(tool.Name);
+            if (split is null)
+            {
+                return true;
+            }
+
+            var globalEnabled = !globallyDisabledToolSet.Contains((split.Value.Slug, split.Value.Name));
+            return profileContext.IsCapabilityEnabled(split.Value.Slug, ServerCapability.ToolKind, split.Value.Name, globalEnabled);
+        }));
         return new ListToolsResult { Tools = tools2 };
     }
 
@@ -116,12 +138,18 @@ builder.Services.AddMcpServer(options =>
 
     foreach (var (slug, client) in upstream.Connections)
     {
+        if (!profileContext.IsServerEnabled(slug))
+        {
+            continue;
+        }
+
         try
         {
             var upstreamTools = await client.ListToolsAsync(cancellationToken: ct);
             foreach (var tool in upstreamTools)
             {
-                if (disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name))
+                var globalEnabled = !(disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name));
+                if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.ToolKind, tool.Name, globalEnabled))
                 {
                     continue;
                 }
@@ -146,7 +174,9 @@ builder.Services.AddMcpServer(options =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
     var db = request.Services!.GetRequiredService<AppDbContext>();
+    var profileService = request.Services!.GetRequiredService<ProfileService>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+    var profileContext = await profileService.GetActiveProfileContextAsync(ct);
     var toolName = request.Params?.Name ?? "";
     var sessionId = request.Server.SessionId ?? "(no session)";
 
@@ -170,7 +200,7 @@ builder.Services.AddMcpServer(options =>
         if (!cache.TryGetValue<IReadOnlyList<Tool>>(cacheKey, out var matchingTools) || matchingTools is null)
         {
             logger.LogInformation("[{SessionId}] search_tools: cache miss, querying upstreams...", sessionId);
-            matchingTools = await ProgressiveDiscoveryService.GetMatchingToolsAsync(upstream, db, query, serverFilter2, logger, ct);
+            matchingTools = await ProgressiveDiscoveryService.GetMatchingToolsAsync(upstream, db, query, serverFilter2, profileContext, logger, ct);
             cache.Set(cacheKey, matchingTools, TimeSpan.FromMinutes(2));
             logger.LogInformation("[{SessionId}] search_tools: found {Count} matching tools in {Elapsed}ms",
                 sessionId, matchingTools.Count, sw.ElapsedMilliseconds);
@@ -231,7 +261,7 @@ builder.Services.AddMcpServer(options =>
 
         var targetDisabled = await db.ServerCapabilities
             .AnyAsync(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && c.Name == targetRealName && c.Server.Slug == targetSlug, ct);
-        if (targetDisabled)
+        if (!profileContext.IsCapabilityEnabled(targetSlug, ServerCapability.ToolKind, targetRealName, !targetDisabled))
         {
             throw new McpProtocolException(
                 $"Tool '{targetName}' is disabled by multiplexer configuration",
@@ -302,7 +332,7 @@ builder.Services.AddMcpServer(options =>
 
     var toolDisabled = await db.ServerCapabilities
         .AnyAsync(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && c.Name == realName && c.Server.Slug == slug, ct);
-    if (toolDisabled)
+    if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.ToolKind, realName, !toolDisabled))
     {
         logger.LogWarning("[{SessionId}] tools/call: tool disabled: {ToolName}", sessionId, toolName);
         throw new McpProtocolException(
@@ -335,16 +365,40 @@ builder.Services.AddMcpServer(options =>
 .WithListResourcesHandler(async (request, ct) =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var db = request.Services!.GetRequiredService<AppDbContext>();
+    var profileService = request.Services!.GetRequiredService<ProfileService>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+    var profileContext = await profileService.GetActiveProfileContextAsync(ct);
     var resources = new List<Resource>();
+    var connectedSlugs = upstream.Connections.Keys.ToList();
+
+    var disabledResourceLookup = await db.ServerCapabilities
+        .Where(c => c.Kind == ServerCapability.ResourceKind && !c.Enabled && connectedSlugs.Contains(c.Server.Slug))
+        .Select(c => new { c.Server.Slug, c.Name })
+        .ToListAsync(ct);
+    var disabledResourcesBySlug = disabledResourceLookup
+        .GroupBy(x => x.Slug, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.Select(x => x.Name).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
 
     foreach (var (slug, client) in upstream.Connections)
     {
+        if (!profileContext.IsServerEnabled(slug))
+        {
+            continue;
+        }
+
         try
         {
             var upstreamResources = await client.ListResourcesAsync(cancellationToken: ct);
             foreach (var resource in upstreamResources)
             {
+                var resourceName = resource.Uri;
+                var globalEnabled = !(disabledResourcesBySlug.TryGetValue(slug, out var disabledResources) && disabledResources.Contains(resourceName));
+                if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.ResourceKind, resourceName, globalEnabled))
+                {
+                    continue;
+                }
+
                 resources.Add(new Resource
                 {
                     Uri = Namespace.PrefixUri(slug, resource.Uri),
@@ -365,6 +419,9 @@ builder.Services.AddMcpServer(options =>
 .WithReadResourceHandler(async (request, ct) =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var db = request.Services!.GetRequiredService<AppDbContext>();
+    var profileService = request.Services!.GetRequiredService<ProfileService>();
+    var profileContext = await profileService.GetActiveProfileContextAsync(ct);
 
     var split = Namespace.SplitUri(request.Params?.Uri ?? "");
     if (split is null)
@@ -375,6 +432,15 @@ builder.Services.AddMcpServer(options =>
     }
 
     var (slug, realUri) = split.Value;
+    var resourceDisabled = await db.ServerCapabilities
+        .AnyAsync(c => c.Kind == ServerCapability.ResourceKind && !c.Enabled && c.Name == realUri && c.Server.Slug == slug, ct);
+    if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.ResourceKind, realUri, !resourceDisabled))
+    {
+        throw new McpProtocolException(
+            $"Resource '{request.Params?.Uri}' is disabled by multiplexer configuration",
+            McpErrorCode.InvalidParams);
+    }
+
     if (!upstream.Connections.TryGetValue(slug, out var client))
     {
         throw new McpProtocolException(
@@ -387,16 +453,39 @@ builder.Services.AddMcpServer(options =>
 .WithListPromptsHandler(async (request, ct) =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var db = request.Services!.GetRequiredService<AppDbContext>();
+    var profileService = request.Services!.GetRequiredService<ProfileService>();
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
+    var profileContext = await profileService.GetActiveProfileContextAsync(ct);
     var prompts = new List<Prompt>();
+    var connectedSlugs = upstream.Connections.Keys.ToList();
+
+    var disabledPromptLookup = await db.ServerCapabilities
+        .Where(c => c.Kind == ServerCapability.PromptKind && !c.Enabled && connectedSlugs.Contains(c.Server.Slug))
+        .Select(c => new { c.Server.Slug, c.Name })
+        .ToListAsync(ct);
+    var disabledPromptsBySlug = disabledPromptLookup
+        .GroupBy(x => x.Slug, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.Select(x => x.Name).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
 
     foreach (var (slug, client) in upstream.Connections)
     {
+        if (!profileContext.IsServerEnabled(slug))
+        {
+            continue;
+        }
+
         try
         {
             var upstreamPrompts = await client.ListPromptsAsync(cancellationToken: ct);
             foreach (var prompt in upstreamPrompts)
             {
+                var globalEnabled = !(disabledPromptsBySlug.TryGetValue(slug, out var disabledPrompts) && disabledPrompts.Contains(prompt.Name));
+                if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.PromptKind, prompt.Name, globalEnabled))
+                {
+                    continue;
+                }
+
                 prompts.Add(new Prompt
                 {
                     Name = Namespace.Prefix(slug, prompt.Name),
@@ -416,6 +505,9 @@ builder.Services.AddMcpServer(options =>
 .WithGetPromptHandler(async (request, ct) =>
 {
     var upstream = request.Services!.GetRequiredService<UpstreamManager>();
+    var db = request.Services!.GetRequiredService<AppDbContext>();
+    var profileService = request.Services!.GetRequiredService<ProfileService>();
+    var profileContext = await profileService.GetActiveProfileContextAsync(ct);
 
     var split = Namespace.Split(request.Params?.Name ?? "");
     if (split is null)
@@ -426,6 +518,15 @@ builder.Services.AddMcpServer(options =>
     }
 
     var (slug, realName) = split.Value;
+    var promptDisabled = await db.ServerCapabilities
+        .AnyAsync(c => c.Kind == ServerCapability.PromptKind && !c.Enabled && c.Name == realName && c.Server.Slug == slug, ct);
+    if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.PromptKind, realName, !promptDisabled))
+    {
+        throw new McpProtocolException(
+            $"Prompt '{request.Params?.Name}' is disabled by multiplexer configuration",
+            McpErrorCode.InvalidParams);
+    }
+
     if (!upstream.Connections.TryGetValue(slug, out var client))
     {
         throw new McpProtocolException(

@@ -21,4 +21,5 @@ public class McpServer
     public DateTime UpdatedAt { get; set; }
 
     public ICollection<ServerCapability> Capabilities { get; set; } = [];
+    public ICollection<ProfileServer> ProfileServers { get; set; } = [];
 }

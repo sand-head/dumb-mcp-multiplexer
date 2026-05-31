@@ -206,7 +206,11 @@ builder.Services.AddMcpServer(options =>
 
         // Cache search results so subsequent pages of the same query are fast
         var cache = request.Services!.GetRequiredService<IMemoryCache>();
-        var cacheKey = $"search:{profileContext.ProfileId ?? AllProfilesCacheKey}:{query}:{serverFilter2 ?? "*"}";
+        var enabledServersFingerprint = string.Join(",", profileContext.EnabledServerSlugs.OrderBy(s => s));
+        var capabilityOverridesFingerprint = string.Join(",", profileContext.CapabilityOverrides
+            .OrderBy(kv => kv.Key.Slug).ThenBy(kv => kv.Key.Kind).ThenBy(kv => kv.Key.Name)
+            .Select(kv => $"{kv.Key.Slug}/{kv.Key.Kind}/{kv.Key.Name}={kv.Value}"));
+        var cacheKey = $"search:{profileContext.ProfileId ?? AllProfilesCacheKey}:{query}:{serverFilter2 ?? "*"}:{enabledServersFingerprint}:{capabilityOverridesFingerprint}";
         if (!cache.TryGetValue<IReadOnlyList<Tool>>(cacheKey, out var matchingTools) || matchingTools is null)
         {
             logger.LogInformation("[{SessionId}] search_tools: cache miss, querying upstreams...", sessionId);

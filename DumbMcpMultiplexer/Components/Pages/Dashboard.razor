@@ -4,6 +4,7 @@
 @using DumbMcpMultiplexer.Services
 @inject ServerService ServerService
 @inject UpstreamManager UpstreamManager
+@inject StdioLifecycleService StdioLifecycleService
 
 <PageTitle>Dashboard — dumb-mcp-multiplexer</PageTitle>
 
@@ -56,19 +57,18 @@
                         <h2 class="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors truncate">
                             @server.Name
                         </h2>
-                        <span class="ml-2 mt-1 flex-shrink-0">
-                            @if (!server.Enabled)
+                        @{
+                            var status = GetStatus(server);
+                        }
+                        <span class="ml-2 mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium @status.BadgeClass">
+                            @if (status.ShowSpinner)
                             {
-                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-gray-600" title="Disabled"></span>
+                                <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                                    <circle class="opacity-20" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"></circle>
+                                    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                                </svg>
                             }
-                            else if (GetHealthStatus(server.Slug) == UpstreamHealthStatus.Degraded)
-                            {
-                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" title="Degraded — last health check failed"></span>
-                            }
-                            else
-                            {
-                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" title="Connected"></span>
-                            }
+                            <span>@status.Label</span>
                         </span>
                     </div>
                     <p class="text-sm font-mono text-gray-400 mb-2 truncate">@server.Slug</p>
@@ -120,6 +120,40 @@
         await LoadServers();
     }
 
+    private ServerStatusBadge GetStatus(McpServer server)
+    {
+        if (!server.Enabled)
+        {
+            return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+        }
+
+        if (server.Transport == "stdio_package_runner" || server.Transport == "stdio_container")
+        {
+            if (!StdioLifecycleService.States.TryGetValue(server.Slug, out var lifecycle))
+            {
+                return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+            }
+
+            return lifecycle.State switch
+            {
+                LifecycleState.Running => new ServerStatusBadge("Running", "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"),
+                LifecycleState.Crashed => new ServerStatusBadge("Crashed", "border-red-700/60 bg-red-950/40 text-red-300"),
+                LifecycleState.Restarting => new ServerStatusBadge("Restarting", "border-yellow-700/60 bg-yellow-950/40 text-yellow-300", true),
+                _ => new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400"),
+            };
+        }
+
+        if (!UpstreamManager.Connections.ContainsKey(server.Slug))
+        {
+            return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+        }
+
+        var health = GetHealthStatus(server.Slug);
+        return health == UpstreamHealthStatus.Degraded
+            ? new ServerStatusBadge("Degraded", "border-amber-700/60 bg-amber-950/40 text-amber-300")
+            : new ServerStatusBadge("Running", "border-emerald-700/60 bg-emerald-950/40 text-emerald-300");
+    }
+
     private UpstreamHealthStatus GetHealthStatus(string slug)
     {
         if (!UpstreamManager.Connections.ContainsKey(slug))
@@ -128,4 +162,6 @@
             ? status
             : UpstreamHealthStatus.Healthy;
     }
+
+    private sealed record ServerStatusBadge(string Label, string BadgeClass, bool ShowSpinner = false);
 }

@@ -4,6 +4,7 @@ using Docker.DotNet.Models;
 using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Models;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -40,6 +41,20 @@ public sealed class UpstreamManager(
     /// Absent means not yet probed (assume healthy).
     /// </summary>
     public IReadOnlyDictionary<string, UpstreamHealthStatus> HealthStatuses => _healthStatuses;
+
+    public bool TryGetContainerRuntime(string slug, out ContainerRuntimeInfo? runtimeInfo)
+    {
+        runtimeInfo = null;
+        if (!_activeConnections.TryGetValue(slug, out var connection)
+            || string.IsNullOrWhiteSpace(connection.ContainerId)
+            || connection.DockerClient is null)
+        {
+            return false;
+        }
+
+        runtimeInfo = new ContainerRuntimeInfo(slug, connection.ContainerId, connection.DockerClient, connection.ConnectedAtUtc);
+        return true;
+    }
 
     /// <summary>
     /// Connect to a single upstream MCP server.
@@ -119,7 +134,7 @@ public sealed class UpstreamManager(
 
         try
         {
-            await client.ListToolsAsync(cancellationToken: probeCts.Token);
+            await ProbeWithPingFallbackAsync(client, probeCts.Token);
             _healthStatuses[slug] = UpstreamHealthStatus.Healthy;
             return true;
         }
@@ -136,6 +151,26 @@ public sealed class UpstreamManager(
             return false;
         }
     }
+
+    private static async Task ProbeWithPingFallbackAsync(McpClient client, CancellationToken ct)
+    {
+        try
+        {
+            await client.PingAsync(new PingRequestParams(), ct);
+        }
+        catch (NotSupportedException)
+        {
+            await client.ListToolsAsync(cancellationToken: ct);
+        }
+        catch (McpProtocolException ex) when (IsMethodNotFound(ex))
+        {
+            await client.ListToolsAsync(cancellationToken: ct);
+        }
+    }
+
+    private static bool IsMethodNotFound(McpProtocolException ex) =>
+        ex.ErrorCode == McpErrorCode.MethodNotFound
+        || ex.Message.Contains("method not found", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Reconnects a single upstream by slug, looking up its configuration from the database.
@@ -647,6 +682,9 @@ public sealed class UpstreamManager(
         Docker.DotNet.DockerClient? dockerClient = null) : IAsyncDisposable
     {
         public McpClient Client { get; } = client;
+        public string? ContainerId { get; } = containerId;
+        public Docker.DotNet.DockerClient? DockerClient { get; } = dockerClient;
+        public DateTime ConnectedAtUtc { get; } = DateTime.UtcNow;
 
         public async ValueTask DisposeAsync()
         {
@@ -654,6 +692,7 @@ public sealed class UpstreamManager(
             {
                 await Client.DisposeAsync();
             }
+
             catch
             {
                 // best effort
@@ -678,6 +717,12 @@ public sealed class UpstreamManager(
         }
     }
 }
+
+public sealed record ContainerRuntimeInfo(
+    string Slug,
+    string ContainerId,
+    Docker.DotNet.DockerClient DockerClient,
+    DateTime ConnectedAtUtc);
 
 public class ConnectionTestResult
 {

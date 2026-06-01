@@ -179,13 +179,42 @@
             else if (_transport == "stdio_container")
             {
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Container Image</label>
-                    <input type="text"
-                           value="@_containerImage"
-                           @oninput="(e) => _containerImage = e.Value?.ToString() ?? string.Empty"
-                           placeholder="ghcr.io/org/mcp-server:latest"
-                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                    <p class="mt-1 text-xs text-gray-500">Pre-built image reference. Containerfile support coming soon.</p>
+                    <label class="block text-sm font-medium text-white mb-1.5">Container Source</label>
+                    <div class="inline-flex rounded-lg border border-gray-700 bg-gray-900 p-1">
+                        <button type="button"
+                                @onclick="() => SetContainerConfigMode(ContainerConfigModeImage)"
+                                class="@GetContainerModeButtonClass(ContainerConfigModeImage)">
+                            Pre-built image
+                        </button>
+                        <button type="button"
+                                @onclick="() => SetContainerConfigMode(ContainerConfigModeContainerfile)"
+                                class="@GetContainerModeButtonClass(ContainerConfigModeContainerfile)">
+                            Containerfile
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    @if (_containerConfigMode == ContainerConfigModeContainerfile)
+                    {
+                        <label class="block text-sm font-medium text-white mb-1.5">Containerfile</label>
+                        <textarea rows="8"
+                                  value="@_containerfile"
+                                  @oninput="(e) => _containerfile = e.Value?.ToString() ?? string.Empty"
+                                  placeholder="FROM python:3.12-slim&#10;RUN pip install my-mcp-server&#10;CMD [ &quot;python&quot;, &quot;-m&quot;, &quot;my_mcp_server&quot; ]"
+                                  class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
+                        <p class="mt-1 text-xs text-gray-500">Paste a full Containerfile to build and cache an image automatically.</p>
+                    }
+                    else
+                    {
+                        <label class="block text-sm font-medium text-white mb-1.5">Container Image</label>
+                        <input type="text"
+                               value="@_containerImage"
+                               @oninput="(e) => _containerImage = e.Value?.ToString() ?? string.Empty"
+                               placeholder="ghcr.io/org/mcp-server:latest"
+                               class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                        <p class="mt-1 text-xs text-gray-500">Use a pre-built image from your registry.</p>
+                    }
                 </div>
 
                 <div>
@@ -278,6 +307,8 @@
     private string _packageRunner = string.Empty;
     private List<EnvEntry> _envEntries = [];
     private string _containerImage = string.Empty;
+    private string _containerfile = string.Empty;
+    private string _containerConfigMode = ContainerConfigModeImage;
     private string _mountsJson = "[]";
 
     private string? _slugError;
@@ -286,6 +317,8 @@
     private bool _testSuccess;
     private bool _saving;
     private bool _slugManuallyEdited;
+    private const string ContainerConfigModeImage = "image";
+    private const string ContainerConfigModeContainerfile = "containerfile";
 
     private class HeaderEntry
     {
@@ -315,6 +348,10 @@
         _envJson = string.IsNullOrWhiteSpace(Server.Env) ? "{}" : (Server.Env ?? "{}");
         _packageRunner = Server.PackageRunner ?? string.Empty;
         _containerImage = Server.ContainerImage ?? string.Empty;
+        _containerfile = Server.Containerfile ?? string.Empty;
+        _containerConfigMode = !string.IsNullOrWhiteSpace(_containerfile) && string.IsNullOrWhiteSpace(_containerImage)
+            ? ContainerConfigModeContainerfile
+            : ContainerConfigModeImage;
         _mountsJson = string.IsNullOrWhiteSpace(Server.ContainerMounts) ? "[]" : Server.ContainerMounts;
         _slugManuallyEdited = true;
 
@@ -370,6 +407,24 @@
         _transport = e.Value?.ToString() ?? "remote_http";
         _testMessage = null;
     }
+
+    private void SetContainerConfigMode(string mode)
+    {
+        _containerConfigMode = mode;
+        if (_containerConfigMode == ContainerConfigModeContainerfile)
+        {
+            _containerImage = string.Empty;
+        }
+        else
+        {
+            _containerfile = string.Empty;
+        }
+    }
+
+    private string GetContainerModeButtonClass(string mode) =>
+        _containerConfigMode == mode
+            ? "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors"
+            : "rounded-md px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors";
 
     private void UpdateHeaderKey(int index, string value)
     {
@@ -602,7 +657,15 @@
 
         if (draftServer.Transport == "stdio_container")
         {
-            if (string.IsNullOrWhiteSpace(_containerImage))
+            var useContainerfile = _containerConfigMode == ContainerConfigModeContainerfile;
+
+            if (useContainerfile && string.IsNullOrWhiteSpace(_containerfile))
+            {
+                errorMessage = "Containerfile is required.";
+                return false;
+            }
+
+            if (!useContainerfile && string.IsNullOrWhiteSpace(_containerImage))
             {
                 errorMessage = "Container image is required.";
                 return false;
@@ -620,7 +683,8 @@
 
             draftServer.Url = null;
             draftServer.Headers = "{}";
-            draftServer.ContainerImage = _containerImage.Trim();
+            draftServer.ContainerImage = useContainerfile ? null : _containerImage.Trim();
+            draftServer.Containerfile = useContainerfile ? _containerfile.Trim() : null;
             draftServer.Command = string.IsNullOrWhiteSpace(_command) ? null : _command.Trim();
             draftServer.Args = null;
             draftServer.Env = normalizedEnvJson;

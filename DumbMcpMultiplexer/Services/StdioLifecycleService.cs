@@ -108,7 +108,7 @@ public sealed class StdioLifecycleService(
     {
         if (!upstreamManager.TryGetContainerRuntime(server.Slug, out var runtime) || runtime is null)
         {
-            await HandleCrashAsync(server, "No active stdio connection.", ct);
+            SetStopped(server.Slug);
             return;
         }
 

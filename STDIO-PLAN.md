@@ -484,16 +484,16 @@ Show container status:
 
 - [x] `ImageBuilderService` — Containerfile → in-memory tar → `BuildImageFromDockerfileAsync`
 - [x] Content-hash tagging and cache check via `ListImagesAsync`
-- [ ] UI: "Custom Container" type with image field OR Containerfile textarea
+- [x] UI: "Custom Container" type with image field OR Containerfile textarea
 - [x] "Rebuild Image" button
-- [ ] Test with a custom Containerfile
+- [x] Test with a custom Containerfile
 
 ### Phase C: Lifecycle Management
 
-- [ ] `StdioLifecycleService` (BackgroundService)
-- [ ] Crash detection and restart with exponential backoff
-- [ ] Health monitoring via MCP ping
-- [ ] Status reporting to UI (running/stopped/failed/restarting)
+- [x] `StdioLifecycleService` (BackgroundService)
+- [x] Crash detection and restart with exponential backoff
+- [x] Health monitoring via MCP ping
+- [x] Status reporting to UI (running/stopped/failed/restarting)
 - [x] Graceful shutdown on app exit
 
 ## Open Questions

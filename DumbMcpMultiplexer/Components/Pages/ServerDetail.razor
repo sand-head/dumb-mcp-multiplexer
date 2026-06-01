@@ -7,6 +7,7 @@
 @inject ServerService ServerService
 @inject NavigationManager Navigation
 @inject UpstreamManager UpstreamManager
+@inject StdioLifecycleService StdioLifecycleService
 @inject ImageBuilderService ImageBuilder
 
 <PageTitle>@(server?.Name ?? "Server") — dumb-mcp-multiplexer</PageTitle>
@@ -78,10 +79,29 @@ else
             @* Status *@
             <div>
                 <dt class="text-sm text-gray-400 mb-1">Status</dt>
+                @{
+                    var status = GetStatusBadge();
+                }
                 <dd class="flex items-center gap-2">
-                    <span class="@StatusDotClass w-2.5 h-2.5 rounded-full"></span>
-                    <span class="@StatusTextClass font-medium">@StatusText</span>
+                    <span class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium @status.BadgeClass">
+                        @if (status.ShowSpinner)
+                        {
+                            <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                                <circle class="opacity-20" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"></circle>
+                                <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                            </svg>
+                        }
+                        <span>@status.Label</span>
+                    </span>
                 </dd>
+                @if (ShowLifecycleDiagnostics)
+                {
+                    <p class="mt-2 text-xs text-gray-400">Retry count: @CurrentLifecycleStatus!.RetryCount</p>
+                    @if (!string.IsNullOrWhiteSpace(CurrentLifecycleStatus.LastError))
+                    {
+                        <p class="mt-1 text-xs text-red-300">@CurrentLifecycleStatus.LastError</p>
+                    }
+                }
             </div>
 
             @* URL *@
@@ -238,19 +258,16 @@ else
             ? "bg-yellow-600 hover:bg-yellow-700 text-white"
             : "bg-green-600 hover:bg-green-700 text-white";
 
-    private string StatusDotClass => GetHealthStatus(server?.Slug ?? "") switch
-    {
-        _ when server?.Enabled != true              => "bg-gray-600",
-        UpstreamHealthStatus.Degraded               => "bg-amber-400",
-        _                                           => "bg-emerald-500",
-    };
+    private LifecycleStatus? CurrentLifecycleStatus =>
+        server is null || (server.Transport != "stdio_package_runner" && server.Transport != "stdio_container")
+            ? null
+            : StdioLifecycleService.States.TryGetValue(server.Slug, out var status)
+                ? status
+                : null;
 
-    private string StatusTextClass => GetHealthStatus(server?.Slug ?? "") switch
-    {
-        _ when server?.Enabled != true              => "text-gray-400",
-        UpstreamHealthStatus.Degraded               => "text-amber-400",
-        _                                           => "text-green-400",
-    };
+    private bool ShowLifecycleDiagnostics =>
+        CurrentLifecycleStatus is not null
+        && (CurrentLifecycleStatus.State == LifecycleState.Crashed || CurrentLifecycleStatus.State == LifecycleState.Restarting);
 
     private UpstreamHealthStatus GetHealthStatus(string slug)
     {
@@ -261,15 +278,32 @@ else
             : UpstreamHealthStatus.Healthy;
     }
 
-    private string StatusText
+    private ServerStatusBadge GetStatusBadge()
     {
-        get
+        if (server?.Enabled != true)
         {
-            if (server?.Enabled != true) return "Disabled";
-            return GetHealthStatus(server.Slug) == UpstreamHealthStatus.Degraded
-                ? "Degraded"
-                : "Connected";
+            return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
         }
+
+        if (CurrentLifecycleStatus is not null)
+        {
+            return CurrentLifecycleStatus.State switch
+            {
+                LifecycleState.Running => new ServerStatusBadge("Running", "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"),
+                LifecycleState.Crashed => new ServerStatusBadge("Crashed", "border-red-700/60 bg-red-950/40 text-red-300"),
+                LifecycleState.Restarting => new ServerStatusBadge("Restarting", "border-yellow-700/60 bg-yellow-950/40 text-yellow-300", true),
+                _ => new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400"),
+            };
+        }
+
+        if (!UpstreamManager.Connections.ContainsKey(server!.Slug))
+        {
+            return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+        }
+
+        return GetHealthStatus(server.Slug) == UpstreamHealthStatus.Degraded
+            ? new ServerStatusBadge("Degraded", "border-amber-700/60 bg-amber-950/40 text-amber-300")
+            : new ServerStatusBadge("Running", "border-emerald-700/60 bg-emerald-950/40 text-emerald-300");
     }
 
     private static string FormatTransport(string transport) => transport switch
@@ -427,4 +461,6 @@ else
         await ServerService.ToggleToolCapabilityEnabledAsync(server.Id, toolName);
         await LoadToolCapabilitiesAsync();
     }
+
+    private sealed record ServerStatusBadge(string Label, string BadgeClass, bool ShowSpinner = false);
 }

@@ -4,6 +4,7 @@ using Docker.DotNet.Models;
 using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Models;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -40,6 +41,20 @@ public sealed class UpstreamManager(
     /// Absent means not yet probed (assume healthy).
     /// </summary>
     public IReadOnlyDictionary<string, UpstreamHealthStatus> HealthStatuses => _healthStatuses;
+
+    public bool TryGetContainerRuntime(string slug, out ContainerRuntimeInfo? runtimeInfo)
+    {
+        runtimeInfo = null;
+        if (!_activeConnections.TryGetValue(slug, out var connection)
+            || string.IsNullOrWhiteSpace(connection.ContainerId)
+            || connection.DockerClient is null)
+        {
+            return false;
+        }
+
+        runtimeInfo = new ContainerRuntimeInfo(slug, connection.ContainerId, connection.DockerClient, connection.ConnectedAtUtc);
+        return true;
+    }
 
     /// <summary>
     /// Connect to a single upstream MCP server.
@@ -119,7 +134,7 @@ public sealed class UpstreamManager(
 
         try
         {
-            await client.ListToolsAsync(cancellationToken: probeCts.Token);
+            await ProbeWithPingFallbackAsync(client, probeCts.Token);
             _healthStatuses[slug] = UpstreamHealthStatus.Healthy;
             return true;
         }
@@ -136,6 +151,26 @@ public sealed class UpstreamManager(
             return false;
         }
     }
+
+    private static async Task ProbeWithPingFallbackAsync(McpClient client, CancellationToken ct)
+    {
+        try
+        {
+            await client.PingAsync(new PingRequestParams(), ct);
+        }
+        catch (NotSupportedException)
+        {
+            await client.ListToolsAsync(cancellationToken: ct);
+        }
+        catch (McpProtocolException ex) when (IsMethodNotFound(ex))
+        {
+            await client.ListToolsAsync(cancellationToken: ct);
+        }
+    }
+
+    private static bool IsMethodNotFound(McpProtocolException ex) =>
+        ex.ErrorCode == McpErrorCode.MethodNotFound
+        || ex.Message.Contains("method not found", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Reconnects a single upstream by slug, looking up its configuration from the database.
@@ -546,7 +581,7 @@ public sealed class UpstreamManager(
             await serverService.SyncCapabilitiesAsync(
                 serverId,
                 ServerCapability.ToolKind,
-                tools.Select(t => (t.Name, t.Description, (string?)t.JsonSchema.ToString())));
+                tools.Select(t => (t.Name, (string?)t.Description, (string?)t.JsonSchema.ToString())));
             logger.LogInformation("Synced {Count} tools for upstream: {Slug}", tools.Count, slug);
         }
         catch (Exception ex)
@@ -640,13 +675,30 @@ public sealed class UpstreamManager(
         }
     }
 
-    private sealed class ActiveConnection(
-        McpClient client,
-        IAsyncDisposable? transport = null,
-        string? containerId = null,
-        Docker.DotNet.DockerClient? dockerClient = null) : IAsyncDisposable
+    private sealed class ActiveConnection : IAsyncDisposable
     {
-        public McpClient Client { get; } = client;
+        private readonly IAsyncDisposable? _transport;
+        private readonly string? _containerId;
+        private readonly Docker.DotNet.DockerClient? _dockerClient;
+
+        public ActiveConnection(
+            McpClient client,
+            IAsyncDisposable? transport = null,
+            string? containerId = null,
+            Docker.DotNet.DockerClient? dockerClient = null,
+            DateTime? connectedAtUtc = null)
+        {
+            Client = client;
+            _transport = transport;
+            _containerId = containerId;
+            _dockerClient = dockerClient;
+            ConnectedAtUtc = connectedAtUtc ?? DateTime.UtcNow;
+        }
+
+        public McpClient Client { get; }
+        public string? ContainerId => _containerId;
+        public Docker.DotNet.DockerClient? DockerClient => _dockerClient;
+        public DateTime ConnectedAtUtc { get; }
 
         public async ValueTask DisposeAsync()
         {
@@ -654,16 +706,17 @@ public sealed class UpstreamManager(
             {
                 await Client.DisposeAsync();
             }
+
             catch
             {
                 // best effort
             }
 
-            if (transport is not null)
+            if (_transport is not null)
             {
                 try
                 {
-                    await transport.DisposeAsync();
+                    await _transport.DisposeAsync();
                 }
                 catch
                 {
@@ -671,13 +724,19 @@ public sealed class UpstreamManager(
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(containerId) && dockerClient is not null)
+            if (!string.IsNullOrWhiteSpace(_containerId) && _dockerClient is not null)
             {
-                await StopAndRemoveContainerAsync(dockerClient, containerId);
+                await StopAndRemoveContainerAsync(_dockerClient, _containerId);
             }
         }
     }
 }
+
+public sealed record ContainerRuntimeInfo(
+    string Slug,
+    string ContainerId,
+    Docker.DotNet.DockerClient DockerClient,
+    DateTime ConnectedAtUtc);
 
 public class ConnectionTestResult
 {

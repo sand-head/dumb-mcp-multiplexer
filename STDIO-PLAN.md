@@ -472,20 +472,20 @@ Show container status:
 
 ### Phase A: Package Runner Mode (Mode 2) ← DO THIS FIRST
 
-- [ ] Add `PackageRunner` field to `McpServer` model + migration
-- [ ] Add `Containerfile` field to `McpServer` model + migration
-- [ ] Rename/update transport type: `stdio_container` → support both `stdio_package_runner` and `stdio_container`
-- [ ] Implement package runner path in `UpstreamManager` (base image lookup + cache volume mount)
-- [ ] Create shared named volume `dumb-mcp-runner-cache-uvx` / `dumb-mcp-runner-cache-npx` on first use
-- [ ] UI: "Package Runner" server type with runner dropdown + command + env + mounts
-- [ ] Test with `uvx music-assistant-mcp`
+- [x] Add `PackageRunner` field to `McpServer` model + migration
+- [x] Add `Containerfile` field to `McpServer` model + migration
+- [x] Rename/update transport type: `stdio_container` → support both `stdio_package_runner` and `stdio_container`
+- [x] Implement package runner path in `UpstreamManager` (base image lookup + cache volume mount)
+- [x] Create shared named volume `dumb-mcp-runner-cache-uvx` / `dumb-mcp-runner-cache-npx` on first use
+- [x] UI: "Package Runner" server type with runner dropdown + command + env + mounts
+- [x] Test with `uvx music-assistant-mcp`
 
 ### Phase B: Custom Containerfile Mode (Mode 3)
 
-- [ ] `ImageBuilderService` — Containerfile → in-memory tar → `BuildImageFromDockerfileAsync`
-- [ ] Content-hash tagging and cache check via `ListImagesAsync`
+- [x] `ImageBuilderService` — Containerfile → in-memory tar → `BuildImageFromDockerfileAsync`
+- [x] Content-hash tagging and cache check via `ListImagesAsync`
 - [ ] UI: "Custom Container" type with image field OR Containerfile textarea
-- [ ] "Rebuild Image" button
+- [x] "Rebuild Image" button
 - [ ] Test with a custom Containerfile
 
 ### Phase C: Lifecycle Management
@@ -494,7 +494,7 @@ Show container status:
 - [ ] Crash detection and restart with exponential backoff
 - [ ] Health monitoring via MCP ping
 - [ ] Status reporting to UI (running/stopped/failed/restarting)
-- [ ] Graceful shutdown on app exit
+- [x] Graceful shutdown on app exit
 
 ## Open Questions
 

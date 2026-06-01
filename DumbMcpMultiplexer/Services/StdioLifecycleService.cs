@@ -125,9 +125,13 @@ public sealed class StdioLifecycleService(
             var details = string.IsNullOrWhiteSpace(inspect.State?.Error)
                 ? inspect.State?.Status
                 : inspect.State?.Error;
+            var detailsSuffix = string.IsNullOrWhiteSpace(details)
+                ? string.Empty
+                : $", {details}";
+            var exitCodeText = exitCode?.ToString() ?? "unknown";
             await HandleCrashAsync(
                 server,
-                $"Container exited unexpectedly (code: {exitCode?.ToString() ?? "unknown"}{(string.IsNullOrWhiteSpace(details) ? string.Empty : $", {details}")}).",
+                $"Container exited unexpectedly (code: {exitCodeText}{detailsSuffix}).",
                 ct);
         }
         catch (DockerContainerNotFoundException)

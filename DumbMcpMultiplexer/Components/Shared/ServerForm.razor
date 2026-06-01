@@ -349,7 +349,7 @@
         _packageRunner = Server.PackageRunner ?? string.Empty;
         _containerImage = Server.ContainerImage ?? string.Empty;
         _containerfile = Server.Containerfile ?? string.Empty;
-        _containerConfigMode = !string.IsNullOrWhiteSpace(_containerfile) && string.IsNullOrWhiteSpace(_containerImage)
+        _containerConfigMode = !string.IsNullOrWhiteSpace(_containerfile)
             ? ContainerConfigModeContainerfile
             : ContainerConfigModeImage;
         _mountsJson = string.IsNullOrWhiteSpace(Server.ContainerMounts) ? "[]" : Server.ContainerMounts;
@@ -657,15 +657,15 @@
 
         if (draftServer.Transport == "stdio_container")
         {
-            var useContainerfile = _containerConfigMode == ContainerConfigModeContainerfile;
+            var isContainerfileMode = _containerConfigMode == ContainerConfigModeContainerfile;
 
-            if (useContainerfile && string.IsNullOrWhiteSpace(_containerfile))
+            if (isContainerfileMode && string.IsNullOrWhiteSpace(_containerfile))
             {
                 errorMessage = "Containerfile is required.";
                 return false;
             }
 
-            if (!useContainerfile && string.IsNullOrWhiteSpace(_containerImage))
+            if (!isContainerfileMode && string.IsNullOrWhiteSpace(_containerImage))
             {
                 errorMessage = "Container image is required.";
                 return false;
@@ -683,8 +683,8 @@
 
             draftServer.Url = null;
             draftServer.Headers = "{}";
-            draftServer.ContainerImage = useContainerfile ? null : _containerImage.Trim();
-            draftServer.Containerfile = useContainerfile ? _containerfile.Trim() : null;
+            draftServer.ContainerImage = isContainerfileMode ? null : _containerImage.Trim();
+            draftServer.Containerfile = isContainerfileMode ? _containerfile.Trim() : null;
             draftServer.Command = string.IsNullOrWhiteSpace(_command) ? null : _command.Trim();
             draftServer.Args = null;
             draftServer.Env = normalizedEnvJson;

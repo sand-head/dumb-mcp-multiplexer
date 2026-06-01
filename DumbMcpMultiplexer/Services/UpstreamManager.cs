@@ -581,7 +581,7 @@ public sealed class UpstreamManager(
             await serverService.SyncCapabilitiesAsync(
                 serverId,
                 ServerCapability.ToolKind,
-                tools.Select(t => (t.Name, t.Description, (string?)t.JsonSchema.ToString())));
+                tools.Select(t => (t.Name, (string?)t.Description, (string?)t.JsonSchema.ToString())));
             logger.LogInformation("Synced {Count} tools for upstream: {Slug}", tools.Count, slug);
         }
         catch (Exception ex)
@@ -675,16 +675,30 @@ public sealed class UpstreamManager(
         }
     }
 
-    private sealed class ActiveConnection(
-        McpClient client,
-        IAsyncDisposable? transport = null,
-        string? containerId = null,
-        Docker.DotNet.DockerClient? dockerClient = null) : IAsyncDisposable
+    private sealed class ActiveConnection : IAsyncDisposable
     {
-        public McpClient Client { get; } = client;
-        public string? ContainerId { get; } = containerId;
-        public Docker.DotNet.DockerClient? DockerClient { get; } = dockerClient;
-        public DateTime ConnectedAtUtc { get; } = DateTime.UtcNow;
+        private readonly IAsyncDisposable? _transport;
+        private readonly string? _containerId;
+        private readonly Docker.DotNet.DockerClient? _dockerClient;
+
+        public ActiveConnection(
+            McpClient client,
+            IAsyncDisposable? transport = null,
+            string? containerId = null,
+            Docker.DotNet.DockerClient? dockerClient = null,
+            DateTime? connectedAtUtc = null)
+        {
+            Client = client;
+            _transport = transport;
+            _containerId = containerId;
+            _dockerClient = dockerClient;
+            ConnectedAtUtc = connectedAtUtc ?? DateTime.UtcNow;
+        }
+
+        public McpClient Client { get; }
+        public string? ContainerId => _containerId;
+        public Docker.DotNet.DockerClient? DockerClient => _dockerClient;
+        public DateTime ConnectedAtUtc { get; }
 
         public async ValueTask DisposeAsync()
         {
@@ -698,11 +712,11 @@ public sealed class UpstreamManager(
                 // best effort
             }
 
-            if (transport is not null)
+            if (_transport is not null)
             {
                 try
                 {
-                    await transport.DisposeAsync();
+                    await _transport.DisposeAsync();
                 }
                 catch
                 {
@@ -710,9 +724,9 @@ public sealed class UpstreamManager(
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(containerId) && dockerClient is not null)
+            if (!string.IsNullOrWhiteSpace(_containerId) && _dockerClient is not null)
             {
-                await StopAndRemoveContainerAsync(dockerClient, containerId);
+                await StopAndRemoveContainerAsync(_dockerClient, _containerId);
             }
         }
     }

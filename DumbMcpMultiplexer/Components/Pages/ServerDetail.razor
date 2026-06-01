@@ -259,7 +259,7 @@ else
             : "bg-green-600 hover:bg-green-700 text-white";
 
     private LifecycleStatus? CurrentLifecycleStatus =>
-        server is null || !(server.Transport == "stdio_package_runner" || server.Transport == "stdio_container")
+        server is null || (server.Transport != "stdio_package_runner" && server.Transport != "stdio_container")
             ? null
             : StdioLifecycleService.States.TryGetValue(server.Slug, out var status)
                 ? status

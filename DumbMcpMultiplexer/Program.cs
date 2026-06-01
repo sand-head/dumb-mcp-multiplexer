@@ -81,6 +81,9 @@ builder.Services.AddMcpServer(options =>
 #pragma warning disable MCPEXP002 // RunSessionHandler is experimental
     options.RunSessionHandler = async (httpContext, server, ct) =>
     {
+        // Resolve the singleton tracker while the HttpContext is still alive —
+        // the context may be disposed by the time the finally block runs.
+        var tracker = httpContext.RequestServices.GetRequiredService<DiscoveredToolsTracker>();
         try
         {
             await server.RunAsync(ct);
@@ -91,7 +94,6 @@ builder.Services.AddMcpServer(options =>
             var sessionId = server.SessionId;
             if (sessionId is not null)
             {
-                var tracker = httpContext.RequestServices.GetRequiredService<DiscoveredToolsTracker>();
                 tracker.ClearSession(sessionId);
             }
         }

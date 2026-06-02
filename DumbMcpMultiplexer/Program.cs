@@ -42,6 +42,7 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddScoped<ServerService>();
 builder.Services.AddScoped<ProfileService>();
+builder.Services.AddScoped<SkillService>();
 builder.Services.AddSingleton<ProfileChangeNotifier>();
 builder.Services.AddSingleton<UpstreamManager>();
 builder.Services.AddSingleton<ContainerService>();
@@ -220,6 +221,31 @@ builder.Services.AddMcpServer(options =>
 
             var result = await CodeModeService.HandleExecuteAsync(upstream, db, code ?? "", profileContext, logger, profileContext.CodeModeToonEnabled, ct);
             logger.LogInformation("[{SessionId}] code_mode/execute completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
+            return result;
+        }
+
+        if (toolName == CodeModeService.CreateSkillToolName)
+        {
+            var skillName = request.Params?.Arguments?.TryGetValue("name", out var n) == true ? n.ToString() ?? "" : "";
+            var skillDesc = request.Params?.Arguments?.TryGetValue("description", out var desc) == true ? desc.ToString() ?? "" : "";
+            var skillCode = request.Params?.Arguments?.TryGetValue("code", out var sc) == true ? sc.ToString() ?? "" : "";
+
+            logger.LogInformation("[{SessionId}] code_mode/create_skill: name={Name}", sessionId, skillName);
+
+            var result = await CodeModeService.HandleCreateSkillAsync(db, skillName, skillDesc, skillCode, logger, ct);
+            logger.LogInformation("[{SessionId}] code_mode/create_skill completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
+            return result;
+        }
+
+        if (toolName == CodeModeService.SearchSkillsToolName)
+        {
+            var skillQuery = request.Params?.Arguments?.TryGetValue("query", out var sq) == true ? sq.ToString() ?? "" : "";
+            var skillLimit = request.Params?.Arguments?.TryGetValue("limit", out var sl) == true && int.TryParse(sl.ToString(), out var slv) ? slv : CodeModeService.DefaultSearchLimit;
+
+            logger.LogInformation("[{SessionId}] code_mode/search_skills: query={Query}, limit={Limit}", sessionId, skillQuery, skillLimit);
+
+            var result = await CodeModeService.HandleSearchSkillsAsync(db, skillQuery, skillLimit, logger, profileContext.CodeModeToonEnabled, ct);
+            logger.LogInformation("[{SessionId}] code_mode/search_skills completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
             return result;
         }
 

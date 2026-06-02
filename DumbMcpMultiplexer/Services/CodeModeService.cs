@@ -20,6 +20,8 @@ public class CodeModeService
     public const string SearchToolName = "search";
     public const string GetSchemaToolName = "get_schema";
     public const string ExecuteToolName = "execute";
+    public const string CreateSkillToolName = "create_skill";
+    public const string SearchSkillsToolName = "search_skills";
 
     public const int DefaultSearchLimit = 10;
     public const int MaxSearchLimit = 50;
@@ -93,7 +95,7 @@ public class CodeModeService
             new Tool
             {
                 Name = ExecuteToolName,
-                Description = $"Execute Lua code in a sandbox. Inside the sandbox, `call_tool(name, args)` is available to invoke any tool by its fully-qualified name. Write a Lua script that chains tool calls and returns the final result. Example:\n\nlocal result = call_tool(\"github__search_pull_requests\", {{ query = \"is:open author:me\" }})\nreturn result\n\nThe call_tool function takes a tool name (string) and an arguments table. It returns the tool's response as a string. Use `return` to send the final result back.{(toonEnabled ? " Structured return values (objects and arrays) are automatically encoded in TOON format." : "")}",
+                Description = $"Execute Lua code in a sandbox. Inside the sandbox, `call_tool(name, args)` invokes any tool by its fully-qualified name, and `call_skill(name, args)` invokes a saved skill by name. Write a Lua script that chains tool/skill calls and returns the final result. Example:\n\nlocal result = call_tool(\"github__search_pull_requests\", {{ query = \"is:open author:me\" }})\nreturn result\n\nBoth functions take a name (string) and an arguments table. They return the result as a string. Use `return` to send the final result back.{(toonEnabled ? " Structured return values (objects and arrays) are automatically encoded in TOON format." : "")}",
                 InputSchema = JsonDocument.Parse("""
                 {
                     "type": "object",
@@ -104,6 +106,54 @@ public class CodeModeService
                         }
                     },
                     "required": ["code"]
+                }
+                """).RootElement
+            },
+            new Tool
+            {
+                Name = CreateSkillToolName,
+                Description = "Save a reusable Lua skill for future use. Skills are stored globally and can be invoked later via `call_skill(name, args)` inside execute. If a skill with the same name already exists, it will be updated. Use this to persist useful patterns, workflows, or utilities you've developed.",
+                InputSchema = JsonDocument.Parse("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "A short, unique identifier for the skill (e.g. 'summarize_pr', 'bulk_label_issues')"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "A brief description of what the skill does, used for search/discovery"
+                        },
+                        "code": {
+                            "type": "string",
+                            "description": "The Lua code for the skill. Should use `...` (varargs) to accept arguments passed via call_skill. Has access to call_tool(name, args) and call_skill(name, args). Example: local args = ... ; return call_tool('github__get_issue', { owner = args.owner, repo = args.repo, issue_number = args.number })"
+                        }
+                    },
+                    "required": ["name", "description", "code"]
+                }
+                """).RootElement
+            },
+            new Tool
+            {
+                Name = SearchSkillsToolName,
+                Description = "Search for saved skills by keyword. Returns skill names and descriptions ranked by relevance. Use this to discover existing skills before writing new code or creating duplicate skills.",
+                InputSchema = JsonDocument.Parse("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search keywords to find relevant skills (e.g. 'summarize', 'github issues', 'label')"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results (default: 10, max: 50)",
+                            "minimum": 1,
+                            "maximum": 50
+                        }
+                    },
+                    "required": ["query"]
                 }
                 """).RootElement
             }
@@ -339,6 +389,57 @@ public class CodeModeService
                 return context.Return(new LuaValue(resultText));
             });
 
+            // Register call_skill(name, args) function
+            state.Environment["call_skill"] = new LuaFunction(async (context, luaCt) =>
+            {
+                var skillName = context.GetArgument<string>(0);
+                var argsTable = context.HasArgument(1) ? context.GetArgument<LuaTable>(1) : null;
+
+                if (string.IsNullOrEmpty(skillName))
+                {
+                    throw new LuaRuntimeException(context.State, new LuaValue("call_skill: first argument (skill name) is required"), 0);
+                }
+
+                var skill = await db.Skills.AsNoTracking().FirstOrDefaultAsync(s => s.Name == skillName, cts.Token);
+                if (skill is null)
+                {
+                    throw new LuaRuntimeException(context.State, new LuaValue($"call_skill: skill '{skillName}' not found"), 0);
+                }
+
+                logger.LogInformation("[CodeMode] call_skill: invoking '{SkillName}'", skillName);
+
+                // Execute the skill's code in a nested Lua state that shares the same call_tool and call_skill functions
+                var skillState = LuaState.Create();
+                skillState.Environment["call_tool"] = state.Environment["call_tool"];
+                skillState.Environment["call_skill"] = state.Environment["call_skill"];
+
+                // Pass arguments as varargs by wrapping the skill code
+                var wrappedCode = skill.Code;
+                if (argsTable is not null)
+                {
+                    // Make the args table available to the skill via the nested state
+                    skillState.Environment["__skill_args"] = new LuaValue(argsTable);
+                    wrappedCode = "local function __skill_fn(...)\n"
+                        + skill.Code + "\n"
+                        + "end\n"
+                        + "return __skill_fn(__skill_args)";
+                }
+                else
+                {
+                    wrappedCode = "local function __skill_fn(...)\n"
+                        + skill.Code + "\n"
+                        + "end\n"
+                        + "return __skill_fn()";
+                }
+
+                var skillResults = await skillState.DoStringAsync(wrappedCode, chunkName: $"skill:{skillName}", cancellationToken: cts.Token);
+                var skillOutput = skillResults.Length > 0
+                    ? LuaValueToString(skillResults[0])
+                    : "";
+
+                return context.Return(new LuaValue(skillOutput));
+            });
+
             var results = await state.DoStringAsync(code, chunkName: "execute", cancellationToken: cts.Token);
 
             var output = results.Length > 0
@@ -394,6 +495,170 @@ public class CodeModeService
                 IsError = true
             };
         }
+    }
+
+    /// <summary>
+    /// Handles the 'create_skill' meta-tool call. Creates or updates a saved skill.
+    /// </summary>
+    public static async Task<CallToolResult> HandleCreateSkillAsync(
+        AppDbContext db,
+        string name,
+        string description,
+        string code,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "Error: skill name is required." }],
+                IsError = true
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "Error: skill code is required." }],
+                IsError = true
+            };
+        }
+
+        try
+        {
+            var existing = await db.Skills.FirstOrDefaultAsync(s => s.Name == name.Trim(), ct);
+            if (existing is not null)
+            {
+                existing.Description = description?.Trim() ?? "";
+                existing.Code = code;
+                existing.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+
+                logger.LogInformation("[CodeMode] create_skill: updated existing skill '{Name}'", name);
+                return new CallToolResult
+                {
+                    Content = [new TextContentBlock { Text = $"Skill '{name}' updated successfully." }]
+                };
+            }
+
+            var skill = new Skill
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = name.Trim(),
+                Description = description?.Trim() ?? "",
+                Code = code,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            db.Skills.Add(skill);
+            await db.SaveChangesAsync(ct);
+
+            logger.LogInformation("[CodeMode] create_skill: created new skill '{Name}'", name);
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = $"Skill '{name}' created successfully." }]
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[CodeMode] create_skill: failed for '{Name}'", name);
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = $"Error creating skill: {ex.Message}" }],
+                IsError = true
+            };
+        }
+    }
+
+    /// <summary>
+    /// Handles the 'search_skills' meta-tool call. Returns matching skills ranked by relevance.
+    /// </summary>
+    public static async Task<CallToolResult> HandleSearchSkillsAsync(
+        AppDbContext db,
+        string query,
+        int limit,
+        ILogger logger,
+        bool toonEnabled,
+        CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, MaxSearchLimit);
+
+        var allSkills = await db.Skills.AsNoTracking().ToListAsync(ct);
+
+        if (allSkills.Count == 0)
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "No skills have been created yet. Use create_skill to save reusable Lua scripts." }]
+            };
+        }
+
+        List<(Skill Skill, int Score)> scored;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            scored = allSkills.OrderBy(s => s.Name).Take(limit).Select(s => (s, 0)).ToList();
+        }
+        else
+        {
+            var queryLower = query.Trim().ToLowerInvariant();
+            scored = [];
+
+            foreach (var skill in allSkills)
+            {
+                var nameLower = skill.Name.ToLowerInvariant();
+                var descLower = skill.Description.ToLowerInvariant();
+
+                var nameScore = Fuzz.WeightedRatio(queryLower, nameLower);
+                var descScore = Fuzz.WeightedRatio(queryLower, descLower);
+                var combinedScore = nameScore * 2 + descScore;
+
+                if (nameScore < 50 && descScore < 50)
+                    continue;
+
+                scored.Add((skill, combinedScore));
+            }
+
+            scored = scored.OrderByDescending(s => s.Score).Take(limit).ToList();
+        }
+
+        if (scored.Count == 0)
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "No skills found matching your query. Try different keywords or use create_skill to create a new one." }]
+            };
+        }
+
+        if (toonEnabled)
+        {
+            var payload = new
+            {
+                total = scored.Count,
+                skills = scored.Select(s => new { name = s.Skill.Name, description = s.Skill.Description }).ToArray()
+            };
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = ToonNet.Encode(payload) }]
+            };
+        }
+
+        var lines = new List<string>();
+        lines.Add($"{scored.Count} skill(s) found:");
+        lines.Add("");
+        foreach (var (skill, _) in scored)
+        {
+            lines.Add($"- {skill.Name}: {skill.Description}");
+        }
+        lines.Add("");
+        lines.Add("Use call_skill(name, args) inside execute to invoke a skill.");
+
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = string.Join("\n", lines) }]
+        };
     }
 
     /// <summary>

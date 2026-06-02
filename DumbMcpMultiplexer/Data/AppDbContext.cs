@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ProfileCapability> ProfileCapabilities => Set<ProfileCapability>();
     public DbSet<AppSetting> Settings => Set<AppSetting>();
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+    public DbSet<Skill> Skills => Set<Skill>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -127,6 +128,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany(ps => ps.Capabilities)
                 .HasForeignKey(e => new { e.ProfileId, e.ServerId })
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Skill>(entity =>
+        {
+            entity.ToTable("skills");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Name).HasColumnName("name").IsRequired();
+            entity.Property(e => e.Description).HasColumnName("description").IsRequired().HasDefaultValue("");
+            entity.Property(e => e.Code).HasColumnName("code").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+
+            entity.HasIndex(e => e.Name).IsUnique();
         });
     }
 }

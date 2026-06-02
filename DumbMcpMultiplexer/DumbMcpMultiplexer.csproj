@@ -28,6 +28,7 @@
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="SharpZipLib" Version="1.4.2" />
+    <PackageReference Include="ToonNet" Version="1.0.4" />
     <ProjectReference Include="..\DumbMcpMultiplexer.Client\DumbMcpMultiplexer.Client.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.8" />
   </ItemGroup>

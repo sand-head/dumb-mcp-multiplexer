@@ -111,7 +111,7 @@ builder.Services.AddMcpServer(options =>
             .Select(s => new { s.Name, s.Slug })
             .ToListAsync(ct);
         var serverInfos = servers.Select(s => (s.Name, s.Slug)).ToList();
-        return new ListToolsResult { Tools = CodeModeService.GetMetaTools(serverInfos).ToList() };
+        return new ListToolsResult { Tools = CodeModeService.GetMetaTools(serverInfos, profileContext.CodeModeToonEnabled).ToList() };
     }
 
     var tools = new List<Tool>();
@@ -184,7 +184,7 @@ builder.Services.AddMcpServer(options =>
             logger.LogInformation("[{SessionId}] code_mode/search: query={Query}, server={Server}, limit={Limit}",
                 sessionId, query, serverFilter2 ?? "*", limit);
 
-            var result = await CodeModeService.HandleSearchAsync(upstream, db, query, serverFilter2, limit, profileContext, logger, ct);
+            var result = await CodeModeService.HandleSearchAsync(upstream, db, query, serverFilter2, limit, profileContext, logger, profileContext.CodeModeToonEnabled, ct);
             logger.LogInformation("[{SessionId}] code_mode/search completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
             return result;
         }
@@ -208,7 +208,7 @@ builder.Services.AddMcpServer(options =>
             logger.LogInformation("[{SessionId}] code_mode/get_schema: tools=[{Tools}], detail={Detail}",
                 sessionId, string.Join(", ", toolNames), detail);
 
-            var result = await CodeModeService.HandleGetSchemaAsync(upstream, db, toolNames, detail, profileContext, logger, ct);
+            var result = await CodeModeService.HandleGetSchemaAsync(upstream, db, toolNames, detail, profileContext, logger, profileContext.CodeModeToonEnabled, ct);
             logger.LogInformation("[{SessionId}] code_mode/get_schema completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
             return result;
         }
@@ -218,7 +218,7 @@ builder.Services.AddMcpServer(options =>
             var code = request.Params?.Arguments?.TryGetValue("code", out var c) == true ? c.ToString() : "";
             logger.LogInformation("[{SessionId}] code_mode/execute: code length={Length}", sessionId, code?.Length ?? 0);
 
-            var result = await CodeModeService.HandleExecuteAsync(upstream, db, code ?? "", profileContext, logger, ct);
+            var result = await CodeModeService.HandleExecuteAsync(upstream, db, code ?? "", profileContext, logger, profileContext.CodeModeToonEnabled, ct);
             logger.LogInformation("[{SessionId}] code_mode/execute completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
             return result;
         }

@@ -1,10 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Models;
 using FuzzySharp;
 using Lua;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Protocol;
+using ToonNetSerializer;
 
 namespace DumbMcpMultiplexer.Services;
 
@@ -28,7 +30,9 @@ public class CodeModeService
     /// names and slugs are both included in the search tool description so the LLM knows
     /// what's available and what value to pass to the 'server' filter.
     /// </summary>
-    public static IReadOnlyList<Tool> GetMetaTools(IReadOnlyList<(string Name, string Slug)>? servers = null)
+    public static IReadOnlyList<Tool> GetMetaTools(
+        IReadOnlyList<(string Name, string Slug)>? servers = null,
+        bool toonEnabled = false)
     {
         var serverList = servers is { Count: > 0 }
             ? $" Available servers: {string.Join(", ", servers.Select(s => $"{s.Name} ({s.Slug})"))}."
@@ -39,7 +43,7 @@ public class CodeModeService
             new Tool
             {
                 Name = SearchToolName,
-                Description = $"Search for available tools by keyword. Returns tool names and brief descriptions. Use this to discover what tools are available before writing code to call them. Results are ranked by relevance. If you get too many results, narrow your query or filter by server.{serverList}",
+                Description = $"Search for available tools by keyword. Returns tool names and brief descriptions. Use this to discover what tools are available before writing code to call them. Results are ranked by relevance. If you get too many results, narrow your query or filter by server.{serverList}{(toonEnabled ? " Results are returned in TOON format." : "")}",
                 InputSchema = JsonDocument.Parse("""
                 {
                     "type": "object",
@@ -66,7 +70,7 @@ public class CodeModeService
             new Tool
             {
                 Name = GetSchemaToolName,
-                Description = "Get detailed parameter schemas for specific tools by name. Call this after searching to learn the exact parameters a tool expects before writing code that calls it. You can request multiple tools at once.",
+                Description = $"Get detailed parameter schemas for specific tools by name. Call this after searching to learn the exact parameters a tool expects before writing code that calls it. You can request multiple tools at once.{(toonEnabled ? " Schemas are returned in TOON format." : "")}",
                 InputSchema = JsonDocument.Parse("""
                 {
                     "type": "object",
@@ -89,7 +93,7 @@ public class CodeModeService
             new Tool
             {
                 Name = ExecuteToolName,
-                Description = "Execute Lua code in a sandbox. Inside the sandbox, `call_tool(name, args)` is available to invoke any tool by its fully-qualified name. Write a Lua script that chains tool calls and returns the final result. Example:\n\nlocal result = call_tool(\"github__search_pull_requests\", { query = \"is:open author:me\" })\nreturn result\n\nThe call_tool function takes a tool name (string) and an arguments table. It returns the tool's response as a string. Use `return` to send the final result back.",
+                Description = $"Execute Lua code in a sandbox. Inside the sandbox, `call_tool(name, args)` is available to invoke any tool by its fully-qualified name. Write a Lua script that chains tool calls and returns the final result. Example:\n\nlocal result = call_tool(\"github__search_pull_requests\", {{ query = \"is:open author:me\" }})\nreturn result\n\nThe call_tool function takes a tool name (string) and an arguments table. It returns the tool's response as a string. Use `return` to send the final result back.{(toonEnabled ? " Structured return values (objects and arrays) are automatically encoded in TOON format." : "")}",
                 InputSchema = JsonDocument.Parse("""
                 {
                     "type": "object",
@@ -117,6 +121,7 @@ public class CodeModeService
         int limit,
         ProfileService.ActiveProfileContext profileContext,
         ILogger logger,
+        bool toonEnabled,
         CancellationToken ct)
     {
         limit = Math.Clamp(limit, 1, MaxSearchLimit);
@@ -129,6 +134,20 @@ public class CodeModeService
             return new CallToolResult
             {
                 Content = [new TextContentBlock { Text = "No tools found matching your query. Try different keywords." }]
+            };
+        }
+
+        if (toonEnabled)
+        {
+            var payload = new
+            {
+                total = totalCount,
+                shown = pageTools.Count,
+                tools = pageTools.Select(t => new { name = t.Name, description = t.Description ?? "" }).ToArray()
+            };
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = ToonNet.Encode(payload) }]
             };
         }
 
@@ -162,6 +181,7 @@ public class CodeModeService
         string detail,
         ProfileService.ActiveProfileContext profileContext,
         ILogger logger,
+        bool toonEnabled,
         CancellationToken ct)
     {
         if (toolNames.Count == 0)
@@ -175,6 +195,34 @@ public class CodeModeService
         // Look up each requested tool from upstream servers
         var allTools = await GetMatchingToolsAsync(upstream, db, "", null, profileContext, logger, ct);
         var toolLookup = allTools.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+        if (toonEnabled)
+        {
+            var schemas = new List<object?>();
+            foreach (var name in toolNames)
+            {
+                if (!toolLookup.TryGetValue(name, out var tool))
+                {
+                    schemas.Add(new { name, found = false, error = "Not found. Check the tool name is correct (use search to find tools)." });
+                    continue;
+                }
+
+                if (detail == "brief")
+                {
+                    schemas.Add(new { name = tool.Name, description = tool.Description ?? "" });
+                }
+                else
+                {
+                    // "detailed" and "full" both emit the structured parameter list in TOON mode
+                    var parameters = BuildParameterList(tool);
+                    schemas.Add(new { name = tool.Name, description = tool.Description ?? "", parameters });
+                }
+            }
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = ToonNet.Encode(schemas) }]
+            };
+        }
 
         var sections = new List<string>();
         foreach (var name in toolNames)
@@ -220,6 +268,7 @@ public class CodeModeService
         string code,
         ProfileService.ActiveProfileContext profileContext,
         ILogger logger,
+        bool toonEnabled,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(code))
@@ -295,6 +344,17 @@ public class CodeModeService
             var output = results.Length > 0
                 ? LuaValueToString(results[0])
                 : "(no return value)";
+
+            if (toonEnabled && output.Length > 0 && (output[0] == '{' || output[0] == '['))
+            {
+                try
+                {
+                    var jsonNode = JsonNode.Parse(output);
+                    if (jsonNode is not null)
+                        output = ToonNet.Encode(jsonNode);
+                }
+                catch { /* Not valid JSON — return as-is */ }
+            }
 
             return new CallToolResult
             {
@@ -413,6 +473,34 @@ public class CodeModeService
             return scored.Select(s => s.Tool).ToList();
 
         return scored.OrderByDescending(s => s.Score).Select(s => s.Tool).ToList();
+    }
+
+    private static List<object> BuildParameterList(Tool tool)
+    {
+        var parameters = new List<object>();
+        if (tool.InputSchema.ValueKind == JsonValueKind.Object &&
+            tool.InputSchema.TryGetProperty("properties", out var properties) &&
+            properties.ValueKind == JsonValueKind.Object)
+        {
+            var requiredSet = new HashSet<string>(StringComparer.Ordinal);
+            if (tool.InputSchema.TryGetProperty("required", out var required) &&
+                required.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var r in required.EnumerateArray())
+                {
+                    if (r.GetString() is string rn)
+                        requiredSet.Add(rn);
+                }
+            }
+
+            foreach (var prop in properties.EnumerateObject())
+            {
+                var type = prop.Value.TryGetProperty("type", out var t) ? t.GetString() ?? "any" : "any";
+                var desc = prop.Value.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+                parameters.Add(new { name = prop.Name, type, required = requiredSet.Contains(prop.Name), description = desc });
+            }
+        }
+        return parameters;
     }
 
     private static string FormatDetailedSchema(Tool tool)

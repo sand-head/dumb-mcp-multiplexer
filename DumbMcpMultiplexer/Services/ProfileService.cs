@@ -13,6 +13,7 @@ public class ProfileService(AppDbContext db, ProfileChangeNotifier profileChange
         public string? ProfileId { get; init; }
         public string? ProfileName { get; init; }
         public bool CodeModeEnabled { get; init; }
+        public bool CodeModeToonEnabled { get; init; }
         public HashSet<string> EnabledServerSlugs { get; init; } = [];
         public Dictionary<(string Slug, string Kind, string Name), bool> CapabilityOverrides { get; init; } = [];
         public bool HasActiveProfile => !string.IsNullOrWhiteSpace(ProfileId);
@@ -60,6 +61,7 @@ public class ProfileService(AppDbContext db, ProfileChangeNotifier profileChange
         public string Name { get; set; } = string.Empty;
         public bool IsDefault { get; set; }
         public bool CodeModeEnabled { get; set; }
+        public bool CodeModeToonEnabled { get; set; }
         public List<ProfileServerEdit> Servers { get; set; } = [];
     }
 
@@ -228,6 +230,7 @@ public class ProfileService(AppDbContext db, ProfileChangeNotifier profileChange
             ProfileId = profile.Id,
             ProfileName = profile.Name,
             CodeModeEnabled = profile.CodeModeEnabled,
+            CodeModeToonEnabled = profile.CodeModeToonEnabled,
             EnabledServerSlugs = enabledServerSlugs,
             CapabilityOverrides = capabilityOverrides
         };
@@ -302,6 +305,7 @@ public class ProfileService(AppDbContext db, ProfileChangeNotifier profileChange
         draft.Name = profile.Name;
         draft.IsDefault = profile.IsDefault;
         draft.CodeModeEnabled = profile.CodeModeEnabled;
+        draft.CodeModeToonEnabled = profile.CodeModeToonEnabled;
 
         var profileServers = await db.ProfileServers
             .AsNoTracking()
@@ -359,6 +363,7 @@ public class ProfileService(AppDbContext db, ProfileChangeNotifier profileChange
         profile!.Name = model.Name.Trim();
         profile.IsDefault = model.IsDefault;
         profile.CodeModeEnabled = model.CodeModeEnabled;
+        profile.CodeModeToonEnabled = model.CodeModeToonEnabled;
         profile.UpdatedAt = DateTime.UtcNow;
 
         if (profile.IsDefault)

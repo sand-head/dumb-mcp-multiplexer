@@ -5,7 +5,6 @@ using DumbMcpMultiplexer.Models;
 using DumbMcpMultiplexer.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -43,17 +42,16 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddScoped<ServerService>();
 builder.Services.AddScoped<ProfileService>();
+builder.Services.AddSingleton<ProfileChangeNotifier>();
 builder.Services.AddSingleton<UpstreamManager>();
 builder.Services.AddSingleton<ContainerService>();
 builder.Services.AddSingleton<ImageBuilderService>();
-builder.Services.AddSingleton<DiscoveredToolsTracker>();
+
 builder.Services.AddHostedService<UpstreamHealthCheckService>();
 builder.Services.AddSingleton<StdioLifecycleService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<StdioLifecycleService>());
-builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 
-const string AllProfilesCacheKey = "__all__";
 static string? GetEndpointProfile(IServiceProvider services)
 {
     var httpContextAccessor = services.GetRequiredService<IHttpContextAccessor>();
@@ -83,22 +81,13 @@ builder.Services.AddMcpServer(options =>
 #pragma warning disable MCPEXP002 // RunSessionHandler is experimental
     options.RunSessionHandler = async (httpContext, server, ct) =>
     {
-        // Resolve the singleton tracker while the HttpContext is still alive —
-        // the context may be disposed by the time the finally block runs.
-        var tracker = httpContext.RequestServices.GetRequiredService<DiscoveredToolsTracker>();
-        try
+        var notifier = httpContext.RequestServices.GetRequiredService<ProfileChangeNotifier>();
+        using var _ = notifier.Subscribe(async () =>
         {
-            await server.RunAsync(ct);
-        }
-        finally
-        {
-            // Clean up discovered tools for this session when it ends
-            var sessionId = server.SessionId;
-            if (sessionId is not null)
-            {
-                tracker.ClearSession(sessionId);
-            }
-        }
+            if (!ct.IsCancellationRequested)
+                await server.SendNotificationAsync(NotificationMethods.ToolListChangedNotification, ct);
+        });
+        await server.RunAsync(ct);
     };
 #pragma warning restore MCPEXP002
 })
@@ -110,33 +99,19 @@ builder.Services.AddMcpServer(options =>
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
     var profileContext = await profileService.GetProfileContextAsync(GetEndpointProfile(request.Services!), ct);
 
-    // If progressive discovery is enabled, return meta-tools + any previously discovered tools for this session
-    if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct))
+    // If Code Mode is enabled for this profile, return only meta-tools (search, get_schema, execute)
+    if (profileContext.CodeModeEnabled)
     {
-        var tracker = request.Services!.GetRequiredService<DiscoveredToolsTracker>();
-        var sessionId = request.Server.SessionId ?? "";
-        var connectedSlugsForProgressive = upstream.Connections.Keys.ToList();
-        var globallyDisabledTools = await db.ServerCapabilities
-            .Where(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && connectedSlugsForProgressive.Contains(c.Server.Slug))
-            .Select(c => new { c.Server.Slug, c.Name })
-            .ToListAsync(ct);
-        var globallyDisabledToolSet = globallyDisabledTools
-            .Select(x => (x.Slug, x.Name))
+        var enabledConnectedSlugs = upstream.Connections.Keys
+            .Where(profileContext.IsServerEnabled)
             .ToHashSet();
-
-        var tools2 = new List<Tool>(ProgressiveDiscoveryService.GetMetaTools());
-        tools2.AddRange(tracker.GetDiscoveredTools(sessionId).Where(tool =>
-        {
-            var split = Namespace.Split(tool.Name);
-            if (split is null)
-            {
-                return true;
-            }
-
-            var globalEnabled = !globallyDisabledToolSet.Contains((split.Value.Slug, split.Value.Name));
-            return profileContext.IsCapabilityEnabled(split.Value.Slug, ServerCapability.ToolKind, split.Value.Name, globalEnabled);
-        }));
-        return new ListToolsResult { Tools = tools2 };
+        var servers = await db.Servers
+            .Where(s => enabledConnectedSlugs.Contains(s.Slug))
+            .OrderBy(s => s.Name)
+            .Select(s => new { s.Name, s.Slug })
+            .ToListAsync(ct);
+        var serverInfos = servers.Select(s => (s.Name, s.Slug)).ToList();
+        return new ListToolsResult { Tools = CodeModeService.GetMetaTools(serverInfos).ToList() };
     }
 
     var tools = new List<Tool>();
@@ -197,145 +172,61 @@ builder.Services.AddMcpServer(options =>
     logger.LogInformation("[{SessionId}] tools/call → {ToolName}", sessionId, toolName);
     var sw = System.Diagnostics.Stopwatch.StartNew();
 
-    // Handle progressive discovery meta-tools
-    var progressiveDiscoveryEnabled = await ProgressiveDiscoveryService.IsEnabledAsync(db, ct);
-    if (progressiveDiscoveryEnabled && toolName == ProgressiveDiscoveryService.SearchToolName)
+    // Handle Code Mode meta-tools when the profile has code mode enabled
+    if (profileContext.CodeModeEnabled)
     {
-        var query = request.Params?.Arguments?.TryGetValue("query", out var q) == true ? q.ToString() : "";
-        var serverFilter2 = request.Params?.Arguments?.TryGetValue("server", out var s) == true ? s.ToString() : null;
-        var offset = request.Params?.Arguments?.TryGetValue("offset", out var o) == true && int.TryParse(o.ToString(), out var ov) ? ov : 0;
-        var limit = request.Params?.Arguments?.TryGetValue("limit", out var l) == true && int.TryParse(l.ToString(), out var lv) ? lv : ProgressiveDiscoveryService.DefaultPageSize;
-
-        logger.LogInformation("[{SessionId}] search_tools: query={Query}, server={Server}, offset={Offset}, limit={Limit}",
-            sessionId, query, serverFilter2 ?? "*", offset, limit);
-
-        // Cache search results so subsequent pages of the same query are fast
-        var cache = request.Services!.GetRequiredService<IMemoryCache>();
-        var enabledServersFingerprint = string.Join(",", profileContext.EnabledServerSlugs.OrderBy(s => s));
-        var capabilityOverridesFingerprint = string.Join(",", profileContext.CapabilityOverrides
-            .OrderBy(kv => kv.Key.Slug).ThenBy(kv => kv.Key.Kind).ThenBy(kv => kv.Key.Name)
-            .Select(kv => $"{kv.Key.Slug}/{kv.Key.Kind}/{kv.Key.Name}={kv.Value}"));
-        var cacheKey = $"search:{profileContext.ProfileId ?? AllProfilesCacheKey}:{query}:{serverFilter2 ?? "*"}:{enabledServersFingerprint}:{capabilityOverridesFingerprint}";
-        if (!cache.TryGetValue<IReadOnlyList<Tool>>(cacheKey, out var matchingTools) || matchingTools is null)
+        if (toolName == CodeModeService.SearchToolName)
         {
-            logger.LogInformation("[{SessionId}] search_tools: cache miss, querying upstreams...", sessionId);
-            matchingTools = await ProgressiveDiscoveryService.GetMatchingToolsAsync(upstream, db, query, serverFilter2, profileContext, logger, ct);
-            cache.Set(cacheKey, matchingTools, TimeSpan.FromMinutes(2));
-            logger.LogInformation("[{SessionId}] search_tools: found {Count} matching tools in {Elapsed}ms",
-                sessionId, matchingTools.Count, sw.ElapsedMilliseconds);
-        }
-        else
-        {
-            logger.LogInformation("[{SessionId}] search_tools: cache hit ({Count} tools)", sessionId, matchingTools.Count);
+            var query = request.Params?.Arguments?.TryGetValue("query", out var q) == true ? q.ToString() : "";
+            var serverFilter2 = request.Params?.Arguments?.TryGetValue("server", out var s) == true ? s.ToString() : null;
+            var limit = request.Params?.Arguments?.TryGetValue("limit", out var l) == true && int.TryParse(l.ToString(), out var lv) ? lv : CodeModeService.DefaultSearchLimit;
+
+            logger.LogInformation("[{SessionId}] code_mode/search: query={Query}, server={Server}, limit={Limit}",
+                sessionId, query, serverFilter2 ?? "*", limit);
+
+            var result = await CodeModeService.HandleSearchAsync(upstream, db, query, serverFilter2, limit, profileContext, logger, ct);
+            logger.LogInformation("[{SessionId}] code_mode/search completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
+            return result;
         }
 
-        var (result, pageTools) = ProgressiveDiscoveryService.FormatSearchResult(matchingTools, offset, limit);
-
-        // Register only the tools in this page so they appear in subsequent tools/list responses
-        if (await ProgressiveDiscoveryService.IsEnabledAsync(db, ct) && pageTools.Count > 0)
+        if (toolName == CodeModeService.GetSchemaToolName)
         {
-            var tracker = request.Services!.GetRequiredService<DiscoveredToolsTracker>();
-            var sid = request.Server.SessionId ?? "";
-            if (tracker.RegisterDiscoveredTools(sid, pageTools))
+            var toolNames = new List<string>();
+            if (request.Params?.Arguments?.TryGetValue("tools", out var toolsArg) == true)
             {
-                logger.LogInformation("[{SessionId}] search_tools: registered {Count} new tools, sending tools/list_changed",
-                    sessionId, pageTools.Count);
-                await request.Server.SendNotificationAsync(
-                    NotificationMethods.ToolListChangedNotification, ct);
-            }
-        }
-
-        return result;
-    }
-
-    if (progressiveDiscoveryEnabled && toolName == ProgressiveDiscoveryService.ListCategoriesToolName)
-    {
-        logger.LogInformation("[{SessionId}] list_tool_categories", sessionId);
-        var catResult = await ProgressiveDiscoveryService.HandleListCategoriesAsync(upstream, logger, ct);
-        logger.LogInformation("[{SessionId}] list_tool_categories completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
-        return catResult;
-    }
-
-    if (progressiveDiscoveryEnabled && toolName == ProgressiveDiscoveryService.CallToolName)
-    {
-        var targetName = request.Params?.Arguments?.TryGetValue("name", out var n) == true ? n.ToString() : "";
-        logger.LogInformation("[{SessionId}] call_tool: name={TargetTool}", sessionId, targetName);
-
-        if (string.IsNullOrEmpty(targetName))
-        {
-            throw new McpProtocolException(
-                "The 'name' argument is required for call_tool",
-                McpErrorCode.InvalidParams);
-        }
-
-        var targetSplit = Namespace.Split(targetName);
-        if (targetSplit is null)
-        {
-            throw new McpProtocolException(
-                $"Tool name '{targetName}' is missing namespace prefix (expected format: slug__tool_name)",
-                McpErrorCode.InvalidParams);
-        }
-
-        var (targetSlug, targetRealName) = targetSplit.Value;
-
-        var targetDisabled = await db.ServerCapabilities
-            .AnyAsync(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && c.Name == targetRealName && c.Server.Slug == targetSlug, ct);
-        if (!profileContext.IsCapabilityEnabled(targetSlug, ServerCapability.ToolKind, targetRealName, !targetDisabled))
-        {
-            throw new McpProtocolException(
-                $"Tool '{targetName}' is disabled by multiplexer configuration",
-                McpErrorCode.InvalidParams);
-        }
-
-        if (!upstream.Connections.TryGetValue(targetSlug, out var targetClient))
-        {
-            throw new McpProtocolException(
-                $"No upstream server with slug '{targetSlug}'",
-                McpErrorCode.InvalidParams);
-        }
-
-        // Extract the nested arguments object.
-        // Prefer 'arguments' when it is a non-empty object; fall back to 'arguments_json' so that
-        // clients that cannot populate an object field don't get silenced by an accidental empty {} value.
-        Dictionary<string, object?>? targetArgs = null;
-        if (request.Params?.Arguments?.TryGetValue("arguments", out var argsElement) == true
-            && argsElement is System.Text.Json.JsonElement jsonEl
-            && jsonEl.ValueKind == System.Text.Json.JsonValueKind.Object
-            && jsonEl.EnumerateObject().Any())
-        {
-            targetArgs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonEl.GetRawText());
-        }
-        else if (request.Params?.Arguments?.TryGetValue("arguments_json", out var argsJsonElement) == true)
-        {
-            var argsJson = argsJsonElement.ToString();
-            if (!string.IsNullOrWhiteSpace(argsJson))
-            {
-                try
+                if (toolsArg is System.Text.Json.JsonElement jsonArr && jsonArr.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
-                    targetArgs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(argsJson);
-                }
-                catch (System.Text.Json.JsonException ex)
-                {
-                    logger.LogWarning("[{SessionId}] call_tool: failed to parse arguments_json: {Error}", sessionId, ex.Message);
-                    throw new McpProtocolException(
-                        $"Invalid JSON in arguments_json: {ex.Message}",
-                        McpErrorCode.InvalidParams);
+                    foreach (var item in jsonArr.EnumerateArray())
+                    {
+                        if (item.GetString() is string name)
+                            toolNames.Add(name);
+                    }
                 }
             }
+            var detail = request.Params?.Arguments?.TryGetValue("detail", out var d) == true ? d.ToString() ?? "detailed" : "detailed";
+
+            logger.LogInformation("[{SessionId}] code_mode/get_schema: tools=[{Tools}], detail={Detail}",
+                sessionId, string.Join(", ", toolNames), detail);
+
+            var result = await CodeModeService.HandleGetSchemaAsync(upstream, db, toolNames, detail, profileContext, logger, ct);
+            logger.LogInformation("[{SessionId}] code_mode/get_schema completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
+            return result;
         }
 
-        logger.LogInformation("[{SessionId}] call_tool: forwarding {RealName} \u2192 upstream '{Slug}'", sessionId, targetRealName, targetSlug);
-        try
+        if (toolName == CodeModeService.ExecuteToolName)
         {
-            var callResult = await targetClient.CallToolAsync(targetRealName, targetArgs, cancellationToken: ct);
-            logger.LogInformation("[{SessionId}] call_tool: {TargetTool} completed in {Elapsed}ms", sessionId, targetName, sw.ElapsedMilliseconds);
-            return callResult;
+            var code = request.Params?.Arguments?.TryGetValue("code", out var c) == true ? c.ToString() : "";
+            logger.LogInformation("[{SessionId}] code_mode/execute: code length={Length}", sessionId, code?.Length ?? 0);
+
+            var result = await CodeModeService.HandleExecuteAsync(upstream, db, code ?? "", profileContext, logger, ct);
+            logger.LogInformation("[{SessionId}] code_mode/execute completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
+            return result;
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "[{SessionId}] call_tool: {TargetTool} FAILED after {Elapsed}ms", sessionId, targetName, sw.ElapsedMilliseconds);
-            throw;
-        }
+
+        // If code mode is enabled but the tool isn't a meta-tool, it shouldn't be callable directly
+        throw new McpProtocolException(
+            $"Tool '{toolName}' is not available in Code Mode. Use 'search' to find tools, then 'execute' to call them via Lua code.",
+            McpErrorCode.InvalidParams);
     }
 
     var split = Namespace.Split(toolName);

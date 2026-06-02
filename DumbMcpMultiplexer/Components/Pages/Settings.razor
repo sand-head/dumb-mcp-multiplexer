@@ -13,26 +13,6 @@
 
     <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
         <div class="mb-4">
-            <h2 class="text-xl font-semibold text-white">Progressive Tool Discovery</h2>
-            <p class="mt-1 text-sm text-gray-400">
-                When enabled, downstream clients see only lightweight <code class="text-gray-300">search_tools</code> and
-                <code class="text-gray-300">list_tool_categories</code> meta-tools instead of the full tool list.
-                This keeps LLM context small even when many upstream tools are available.
-                Clients discover and call actual tools on demand.
-            </p>
-        </div>
-
-        <label class="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox"
-                   checked="@_progressiveDiscovery"
-                   @onchange="ToggleProgressiveDiscovery"
-                   class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500" />
-            <span class="text-white text-sm font-medium">Enable progressive discovery</span>
-        </label>
-    </div>
-
-    <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
-        <div class="mb-4">
             <h2 class="text-xl font-semibold text-white">Allowed Hosts</h2>
             <p class="mt-1 text-sm text-gray-400">
                 Configure which hostnames are allowed to reach the <code class="text-gray-300">/mcp</code> endpoint.
@@ -150,7 +130,6 @@
 
 @code {
     private List<string> _hosts = new();
-    private bool _progressiveDiscovery;
     private string? _apiKey;
     private bool _showApiKey;
     private bool _savingApiKey;
@@ -170,9 +149,6 @@
                               .ToList();
             }
 
-            var pdValue = await ServerService.GetSettingAsync("progressive_discovery");
-            _progressiveDiscovery = pdValue == "true";
-
             _apiKey = await ServerService.GetSettingAsync("api_key");
             if (string.IsNullOrWhiteSpace(_apiKey)) _apiKey = null;
         }
@@ -180,12 +156,6 @@
         {
             _errorMessage = $"Failed to load settings: {ex.Message}";
         }
-    }
-
-    private void ToggleProgressiveDiscovery(ChangeEventArgs e)
-    {
-        _progressiveDiscovery = (bool?)e.Value == true;
-        ClearMessages();
     }
 
     private void AddHost()
@@ -260,7 +230,6 @@
         {
             var commaSeparatedValue = string.Join(",", _hosts.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()));
             await ServerService.SetSettingAsync("allowed_hosts", commaSeparatedValue);
-            await ServerService.SetSettingAsync("progressive_discovery", _progressiveDiscovery ? "true" : "false");
             _successMessage = "Settings saved successfully.";
 
             // Refresh the list to remove any empty entries

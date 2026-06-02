@@ -82,6 +82,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Name).HasColumnName("name").IsRequired();
             entity.Property(e => e.IsDefault).HasColumnName("is_default").IsRequired().HasDefaultValue(false);
+            entity.Property(e => e.CodeModeEnabled).HasColumnName("code_mode_enabled").IsRequired().HasDefaultValue(false);
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
 

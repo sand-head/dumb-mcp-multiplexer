@@ -81,6 +81,19 @@
                 </label>
             </div>
 
+            <div class="rounded-lg border border-gray-800 bg-gray-950 p-4">
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" @bind="_editor.CodeModeEnabled" />
+                    <span class="text-sm text-gray-100 font-medium">Enable Code Mode</span>
+                </label>
+                <p class="mt-2 text-xs text-gray-400">
+                    When enabled, downstream clients see only <code class="text-gray-300">search</code>,
+                    <code class="text-gray-300">get_schema</code>, and <code class="text-gray-300">execute</code> meta-tools
+                    instead of the full tool list. Clients discover tools on demand and invoke them by writing Lua code
+                    in a sandboxed environment.
+                </p>
+            </div>
+
             <div class="space-y-4 max-h-[55vh] overflow-auto pr-2">
                 @foreach (var server in _editor.Servers.OrderBy(s => s.ServerName))
                 {

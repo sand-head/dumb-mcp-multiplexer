@@ -10,13 +10,14 @@
   <Target Name="BuildTailwind" BeforeTargets="AssignTargetPaths" Condition="'$(SkipTailwind)' != 'true'">
     <Exec Command="npx @tailwindcss/cli -i DumbMcpMultiplexer/Styles/app.css -o DumbMcpMultiplexer/wwwroot/app.css --minify" WorkingDirectory="$(MSBuildProjectDirectory)/.." />
     <ItemGroup>
-      <Content Include="wwwroot/app.css" CopyToPublishDirectory="PreserveNewest" Condition="!@(Content->AnyHaveMetadataValue('Identity', 'wwwroot/app.css'))" />
+      <Content Include="wwwroot/app.css" CopyToPublishDirectory="PreserveNewest" Condition="!@(Content-&gt;AnyHaveMetadataValue('Identity', 'wwwroot/app.css'))" />
     </ItemGroup>
   </Target>
 
   <ItemGroup>
     <PackageReference Include="Docker.DotNet" Version="3.125.15" />
     <PackageReference Include="FuzzySharp" Version="2.0.2" />
+    <PackageReference Include="LuaCSharp" Version="0.5.5" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.8" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

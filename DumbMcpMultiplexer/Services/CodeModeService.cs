@@ -1,0 +1,537 @@
+using System.Text.Json;
+using DumbMcpMultiplexer.Data;
+using DumbMcpMultiplexer.Models;
+using FuzzySharp;
+using Lua;
+using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol.Protocol;
+
+namespace DumbMcpMultiplexer.Services;
+
+/// <summary>
+/// Provides Code Mode: a per-profile feature that replaces direct tool exposure with
+/// meta-tools for discovery and sandboxed Lua execution. Instead of calling tools directly,
+/// LLMs search for tools, inspect their schemas, then write Lua code that chains tool calls.
+/// </summary>
+public class CodeModeService
+{
+    public const string SearchToolName = "search";
+    public const string GetSchemaToolName = "get_schema";
+    public const string ExecuteToolName = "execute";
+
+    public const int DefaultSearchLimit = 10;
+    public const int MaxSearchLimit = 50;
+
+    /// <summary>
+    /// Returns the meta-tools exposed when Code Mode is enabled for a profile.
+    /// <paramref name="servers"/> is the list of connected servers the profile has access to;
+    /// names and slugs are both included in the search tool description so the LLM knows
+    /// what's available and what value to pass to the 'server' filter.
+    /// </summary>
+    public static IReadOnlyList<Tool> GetMetaTools(IReadOnlyList<(string Name, string Slug)>? servers = null)
+    {
+        var serverList = servers is { Count: > 0 }
+            ? $" Available servers: {string.Join(", ", servers.Select(s => $"{s.Name} ({s.Slug})"))}."
+            : string.Empty;
+
+        return
+        [
+            new Tool
+            {
+                Name = SearchToolName,
+                Description = $"Search for available tools by keyword. Returns tool names and brief descriptions. Use this to discover what tools are available before writing code to call them. Results are ranked by relevance. If you get too many results, narrow your query or filter by server.{serverList}",
+                InputSchema = JsonDocument.Parse("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search keywords to find relevant tools (e.g. 'create issue', 'file search', 'database')"
+                        },
+                        "server": {
+                            "type": "string",
+                            "description": "Optional: filter results to a specific server/namespace (use the server slug in parentheses)"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results (default: 10, max: 50)",
+                            "minimum": 1,
+                            "maximum": 50
+                        }
+                    },
+                    "required": ["query"]
+                }
+                """).RootElement
+            },
+            new Tool
+            {
+                Name = GetSchemaToolName,
+                Description = "Get detailed parameter schemas for specific tools by name. Call this after searching to learn the exact parameters a tool expects before writing code that calls it. You can request multiple tools at once.",
+                InputSchema = JsonDocument.Parse("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "tools": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "List of fully-qualified tool names to get schemas for (e.g. ['github__create_issue', 'github__search_pull_requests'])"
+                        },
+                        "detail": {
+                            "type": "string",
+                            "enum": ["brief", "detailed", "full"],
+                            "description": "Level of detail: 'brief' = names and descriptions only, 'detailed' = parameter names/types/required (default), 'full' = complete JSON schema"
+                        }
+                    },
+                    "required": ["tools"]
+                }
+                """).RootElement
+            },
+            new Tool
+            {
+                Name = ExecuteToolName,
+                Description = "Execute Lua code in a sandbox. Inside the sandbox, `call_tool(name, args)` is available to invoke any tool by its fully-qualified name. Write a Lua script that chains tool calls and returns the final result. Example:\n\nlocal result = call_tool(\"github__search_pull_requests\", { query = \"is:open author:me\" })\nreturn result\n\nThe call_tool function takes a tool name (string) and an arguments table. It returns the tool's response as a string. Use `return` to send the final result back.",
+                InputSchema = JsonDocument.Parse("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "description": "Lua code to execute. Use call_tool(name, args) to invoke tools. Use 'return' to return the final result."
+                        }
+                    },
+                    "required": ["code"]
+                }
+                """).RootElement
+            }
+        ];
+    }
+
+    /// <summary>
+    /// Handles the 'search' meta-tool call. Returns matching tools ranked by relevance.
+    /// </summary>
+    public static async Task<CallToolResult> HandleSearchAsync(
+        UpstreamManager upstream,
+        AppDbContext db,
+        string query,
+        string? serverFilter,
+        int limit,
+        ProfileService.ActiveProfileContext profileContext,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, MaxSearchLimit);
+        var matchingTools = await GetMatchingToolsAsync(upstream, db, query, serverFilter, profileContext, logger, ct);
+        var totalCount = matchingTools.Count;
+        var pageTools = matchingTools.Take(limit).ToList();
+
+        if (pageTools.Count == 0)
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "No tools found matching your query. Try different keywords." }]
+            };
+        }
+
+        var lines = new List<string>();
+        lines.Add($"{pageTools.Count} of {totalCount} tools:");
+        lines.Add("");
+        foreach (var tool in pageTools)
+        {
+            lines.Add($"- {tool.Name}: {tool.Description ?? "(no description)"}");
+        }
+
+        if (totalCount > limit)
+        {
+            lines.Add("");
+            lines.Add($"({totalCount - limit} more results not shown — refine your query or increase limit)");
+        }
+
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = string.Join("\n", lines) }]
+        };
+    }
+
+    /// <summary>
+    /// Handles the 'get_schema' meta-tool call. Returns parameter schemas for the requested tools.
+    /// </summary>
+    public static async Task<CallToolResult> HandleGetSchemaAsync(
+        UpstreamManager upstream,
+        AppDbContext db,
+        IReadOnlyList<string> toolNames,
+        string detail,
+        ProfileService.ActiveProfileContext profileContext,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        if (toolNames.Count == 0)
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "No tool names provided. Pass a 'tools' array with tool names from search results." }]
+            };
+        }
+
+        // Look up each requested tool from upstream servers
+        var allTools = await GetMatchingToolsAsync(upstream, db, "", null, profileContext, logger, ct);
+        var toolLookup = allTools.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+        var sections = new List<string>();
+        foreach (var name in toolNames)
+        {
+            if (!toolLookup.TryGetValue(name, out var tool))
+            {
+                sections.Add($"### {name}\n\nNot found. Check the tool name is correct (use search to find tools).");
+                continue;
+            }
+
+            switch (detail)
+            {
+                case "brief":
+                    sections.Add($"### {tool.Name}\n\n{tool.Description ?? "(no description)"}");
+                    break;
+
+                case "full":
+                    var fullJson = tool.InputSchema.ValueKind != JsonValueKind.Undefined
+                        ? JsonSerializer.Serialize(tool.InputSchema, new JsonSerializerOptions { WriteIndented = true })
+                        : "{}";
+                    sections.Add($"### {tool.Name}\n\n{tool.Description ?? "(no description)"}\n\n**Full JSON Schema**\n```json\n{fullJson}\n```");
+                    break;
+
+                case "detailed":
+                default:
+                    sections.Add(FormatDetailedSchema(tool));
+                    break;
+            }
+        }
+
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = string.Join("\n\n", sections) }]
+        };
+    }
+
+    /// <summary>
+    /// Handles the 'execute' meta-tool call. Runs Lua code in a sandbox with call_tool() available.
+    /// </summary>
+    public static async Task<CallToolResult> HandleExecuteAsync(
+        UpstreamManager upstream,
+        AppDbContext db,
+        string code,
+        ProfileService.ActiveProfileContext profileContext,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "Error: no code provided." }],
+                IsError = true
+            };
+        }
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            var state = LuaState.Create();
+
+            // Register call_tool(name, args) function
+            state.Environment["call_tool"] = new LuaFunction(async (context, luaCt) =>
+            {
+                var toolName = context.GetArgument<string>(0);
+                var argsTable = context.HasArgument(1) ? context.GetArgument<LuaTable>(1) : null;
+
+                if (string.IsNullOrEmpty(toolName))
+                {
+                    throw new LuaRuntimeException(context.State, new LuaValue("call_tool: first argument (tool name) is required"), 0);
+                }
+
+                // Resolve the tool's upstream server
+                var split = Namespace.Split(toolName);
+                if (split is null)
+                {
+                    throw new LuaRuntimeException(context.State, new LuaValue($"call_tool: tool name '{toolName}' is missing namespace prefix (expected format: slug__tool_name)"), 0);
+                }
+
+                var (slug, realName) = split.Value;
+
+                // Check if enabled
+                var toolDisabled = await db.ServerCapabilities
+                    .AnyAsync(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && c.Name == realName && c.Server.Slug == slug, cts.Token);
+                if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.ToolKind, realName, !toolDisabled))
+                {
+                    throw new LuaRuntimeException(context.State, new LuaValue($"call_tool: tool '{toolName}' is disabled"), 0);
+                }
+
+                if (!upstream.Connections.TryGetValue(slug, out var client))
+                {
+                    throw new LuaRuntimeException(context.State, new LuaValue($"call_tool: no upstream server with slug '{slug}'"), 0);
+                }
+
+                // Convert Lua table to Dictionary
+                Dictionary<string, object?>? arguments = null;
+                if (argsTable is not null)
+                {
+                    arguments = LuaTableToDictionary(argsTable);
+                }
+
+                logger.LogInformation("[CodeMode] call_tool: {ToolName} → upstream '{Slug}'", realName, slug);
+                var callResult = await client.CallToolAsync(realName, arguments, cancellationToken: cts.Token);
+
+                // Return the result as a string to Lua
+                var resultText = string.Join("\n", callResult.Content
+                    .Where(c => c is TextContentBlock)
+                    .Cast<TextContentBlock>()
+                    .Select(c => c.Text));
+
+                return context.Return(new LuaValue(resultText));
+            });
+
+            var results = await state.DoStringAsync(code, chunkName: "execute", cancellationToken: cts.Token);
+
+            var output = results.Length > 0
+                ? LuaValueToString(results[0])
+                : "(no return value)";
+
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = output }]
+            };
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = "Error: script execution timed out (30s limit)." }],
+                IsError = true
+            };
+        }
+        catch (LuaParseException ex)
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = $"Lua syntax error: {ex.Message}" }],
+                IsError = true
+            };
+        }
+        catch (LuaRuntimeException ex)
+        {
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = $"Lua runtime error: {ex.Message}" }],
+                IsError = true
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "[CodeMode] execute: unexpected error");
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = $"Error: {ex.Message}" }],
+                IsError = true
+            };
+        }
+    }
+
+    /// <summary>
+    /// Returns matching Tool objects from upstream servers, scored and sorted by relevance.
+    /// </summary>
+    public static async Task<IReadOnlyList<Tool>> GetMatchingToolsAsync(
+        UpstreamManager upstream,
+        AppDbContext db,
+        string query,
+        string? serverFilter,
+        ProfileService.ActiveProfileContext profileContext,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        var connectedSlugs = upstream.Connections.Keys.ToList();
+
+        var disabledToolLookup = await db.ServerCapabilities
+            .Where(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && connectedSlugs.Contains(c.Server.Slug))
+            .Select(c => new { c.Server.Slug, c.Name })
+            .ToListAsync(ct);
+        var disabledToolsBySlug = disabledToolLookup
+            .GroupBy(x => x.Slug, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Select(x => x.Name).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+
+        var scored = new List<(Tool Tool, int Score)>();
+        var queryLower = query.Trim().ToLowerInvariant();
+
+        foreach (var (slug, client) in upstream.Connections)
+        {
+            if (serverFilter is not null && !slug.Equals(serverFilter, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (!profileContext.IsServerEnabled(slug))
+                continue;
+
+            try
+            {
+                var upstreamTools = await client.ListToolsAsync(cancellationToken: ct);
+                foreach (var tool in upstreamTools)
+                {
+                    var globalEnabled = !(disabledToolsBySlug.TryGetValue(slug, out var disabledTools) && disabledTools.Contains(tool.Name));
+                    if (!profileContext.IsCapabilityEnabled(slug, ServerCapability.ToolKind, tool.Name, globalEnabled))
+                        continue;
+
+                    var prefixedTool = new Tool
+                    {
+                        Name = Namespace.Prefix(slug, tool.Name),
+                        Description = tool.Description,
+                        InputSchema = JsonSchemaSanitizer.Sanitize(tool.JsonSchema)
+                    };
+
+                    if (string.IsNullOrEmpty(queryLower))
+                    {
+                        scored.Add((prefixedTool, 0));
+                        continue;
+                    }
+
+                    var nameLower = tool.Name.ToLowerInvariant();
+                    var descLower = (tool.Description ?? "").ToLowerInvariant();
+
+                    var nameScore = Fuzz.WeightedRatio(queryLower, nameLower);
+                    var descScore = Fuzz.WeightedRatio(queryLower, descLower);
+                    var combinedScore = nameScore * 2 + descScore;
+
+                    if (nameScore < 50 && descScore < 50)
+                        continue;
+
+                    scored.Add((prefixedTool, combinedScore));
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[CodeMode] Failed to list tools from upstream: {Slug}", slug);
+            }
+        }
+
+        if (string.IsNullOrEmpty(queryLower))
+            return scored.Select(s => s.Tool).ToList();
+
+        return scored.OrderByDescending(s => s.Score).Select(s => s.Tool).ToList();
+    }
+
+    private static string FormatDetailedSchema(Tool tool)
+    {
+        var lines = new List<string>();
+        lines.Add($"### {tool.Name}");
+        lines.Add("");
+        lines.Add(tool.Description ?? "(no description)");
+        lines.Add("");
+        lines.Add("**Parameters**");
+
+        if (tool.InputSchema.ValueKind == JsonValueKind.Object &&
+            tool.InputSchema.TryGetProperty("properties", out var properties) &&
+            properties.ValueKind == JsonValueKind.Object)
+        {
+            var requiredSet = new HashSet<string>(StringComparer.Ordinal);
+            if (tool.InputSchema.TryGetProperty("required", out var required) &&
+                required.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var r in required.EnumerateArray())
+                {
+                    if (r.GetString() is string name)
+                        requiredSet.Add(name);
+                }
+            }
+
+            foreach (var prop in properties.EnumerateObject())
+            {
+                var type = prop.Value.TryGetProperty("type", out var t) ? t.GetString() ?? "any" : "any";
+                var isRequired = requiredSet.Contains(prop.Name);
+                var desc = prop.Value.TryGetProperty("description", out var d) ? d.GetString() : null;
+                var line = $"- `{prop.Name}` ({type}{(isRequired ? ", required" : "")})";
+                if (!string.IsNullOrEmpty(desc))
+                    line += $": {desc}";
+                lines.Add(line);
+            }
+        }
+        else
+        {
+            lines.Add("- (no parameters)");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    private static Dictionary<string, object?> LuaTableToDictionary(LuaTable table)
+    {
+        var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var currentKey = LuaValue.Nil;
+        while (table.TryGetNext(currentKey, out var pair))
+        {
+            var keyStr = LuaValueToString(pair.Key);
+            dict[keyStr] = LuaValueToObject(pair.Value);
+            currentKey = pair.Key;
+        }
+        return dict;
+    }
+
+    private static object? LuaValueToObject(LuaValue value)
+    {
+        if (value.TryRead<string>(out var str))
+            return str;
+        if (value.TryRead<double>(out var num))
+        {
+            // Return as int if it's a whole number
+            if (num == Math.Floor(num) && num is >= int.MinValue and <= int.MaxValue)
+                return (int)num;
+            return num;
+        }
+        if (value.TryRead<bool>(out var b))
+            return b;
+        if (value.TryRead<LuaTable>(out var tbl))
+        {
+            // Check if it's an array (sequential integer keys starting from 1)
+            var isArray = true;
+            var maxIndex = 0;
+            var currentKey = LuaValue.Nil;
+            while (tbl.TryGetNext(currentKey, out var pair))
+            {
+                if (pair.Key.TryRead<double>(out var idx) && idx == Math.Floor(idx) && idx >= 1)
+                {
+                    maxIndex = Math.Max(maxIndex, (int)idx);
+                }
+                else
+                {
+                    isArray = false;
+                    break;
+                }
+                currentKey = pair.Key;
+            }
+
+            if (isArray && maxIndex > 0)
+            {
+                var list = new List<object?>();
+                for (int i = 1; i <= maxIndex; i++)
+                {
+                    list.Add(LuaValueToObject(tbl[i]));
+                }
+                return list;
+            }
+
+            return LuaTableToDictionary(tbl);
+        }
+        if (value == LuaValue.Nil)
+            return null;
+
+        return value.ToString();
+    }
+
+    private static string LuaValueToString(LuaValue value)
+    {
+        if (value.TryRead<string>(out var str))
+            return str;
+        if (value.TryRead<double>(out var num))
+            return num.ToString();
+        if (value.TryRead<bool>(out var b))
+            return b.ToString().ToLowerInvariant();
+        if (value.TryRead<LuaTable>(out var tbl))
+            return JsonSerializer.Serialize(LuaTableToDictionary(tbl));
+        return value.ToString() ?? "";
+    }
+}

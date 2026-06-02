@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DumbMcpMultiplexer.Services;
 
-public class ProfileService(AppDbContext db)
+public class ProfileService(AppDbContext db, ProfileChangeNotifier profileChangeNotifier)
 {
     public const string ActiveProfileIdSettingKey = "active_profile_id";
 
@@ -12,6 +12,7 @@ public class ProfileService(AppDbContext db)
     {
         public string? ProfileId { get; init; }
         public string? ProfileName { get; init; }
+        public bool CodeModeEnabled { get; init; }
         public HashSet<string> EnabledServerSlugs { get; init; } = [];
         public Dictionary<(string Slug, string Kind, string Name), bool> CapabilityOverrides { get; init; } = [];
         public bool HasActiveProfile => !string.IsNullOrWhiteSpace(ProfileId);
@@ -58,6 +59,7 @@ public class ProfileService(AppDbContext db)
         public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public bool IsDefault { get; set; }
+        public bool CodeModeEnabled { get; set; }
         public List<ProfileServerEdit> Servers { get; set; } = [];
     }
 
@@ -225,6 +227,7 @@ public class ProfileService(AppDbContext db)
         {
             ProfileId = profile.Id,
             ProfileName = profile.Name,
+            CodeModeEnabled = profile.CodeModeEnabled,
             EnabledServerSlugs = enabledServerSlugs,
             CapabilityOverrides = capabilityOverrides
         };
@@ -298,6 +301,7 @@ public class ProfileService(AppDbContext db)
         draft.Id = profile.Id;
         draft.Name = profile.Name;
         draft.IsDefault = profile.IsDefault;
+        draft.CodeModeEnabled = profile.CodeModeEnabled;
 
         var profileServers = await db.ProfileServers
             .AsNoTracking()
@@ -354,6 +358,7 @@ public class ProfileService(AppDbContext db)
 
         profile!.Name = model.Name.Trim();
         profile.IsDefault = model.IsDefault;
+        profile.CodeModeEnabled = model.CodeModeEnabled;
         profile.UpdatedAt = DateTime.UtcNow;
 
         if (profile.IsDefault)
@@ -406,6 +411,10 @@ public class ProfileService(AppDbContext db)
 
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        // Notify active MCP sessions that the tool list may have changed
+        profileChangeNotifier.Notify();
+
         return profile.Id;
     }
 

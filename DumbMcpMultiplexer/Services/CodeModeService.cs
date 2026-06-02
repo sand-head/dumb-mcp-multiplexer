@@ -30,7 +30,7 @@ public class CodeModeService
     /// Returns the meta-tools exposed when Code Mode is enabled for a profile.
     /// <paramref name="servers"/> is the list of connected servers the profile has access to;
     /// names and slugs are both included in the search tool description so the LLM knows
-    /// what's available and what value to pass to the 'server' filter.
+    /// what's available and what values the 'server' filter accepts.
     /// </summary>
     public static IReadOnlyList<Tool> GetMetaTools(
         IReadOnlyList<(string Name, string Slug)>? servers = null,
@@ -56,7 +56,7 @@ public class CodeModeService
                         },
                         "server": {
                             "type": "string",
-                            "description": "Optional: filter results to a specific server/namespace (use the server slug in parentheses)"
+                            "description": "Optional: filter results to a specific server/namespace (accepts the server slug, display name, or full 'Name (slug)' label from the available servers list)"
                         },
                         "limit": {
                             "type": "integer",
@@ -685,10 +685,30 @@ public class CodeModeService
 
         var scored = new List<(Tool Tool, int Score)>();
         var queryLower = query.Trim().ToLowerInvariant();
+        HashSet<string>? allowedServerSlugs = null;
+
+        if (!string.IsNullOrWhiteSpace(serverFilter))
+        {
+            var normalizedServerFilter = serverFilter.Trim().ToLowerInvariant();
+            var connectedSlugsLower = connectedSlugs
+                .Select(slug => slug.ToLowerInvariant())
+                .ToList();
+            allowedServerSlugs = (await db.Servers
+                .Where(s => connectedSlugsLower.Contains(s.Slug.ToLower()) && (
+                    s.Slug.ToLower() == normalizedServerFilter ||
+                    s.Name.ToLower() == normalizedServerFilter ||
+                    (s.Name + " (" + s.Slug + ")").ToLower() == normalizedServerFilter))
+                .Select(server => server.Slug)
+                .ToListAsync(ct))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (allowedServerSlugs.Count == 0)
+                return [];
+        }
 
         foreach (var (slug, client) in upstream.Connections)
         {
-            if (serverFilter is not null && !slug.Equals(serverFilter, StringComparison.OrdinalIgnoreCase))
+            if (allowedServerSlugs is not null && !allowedServerSlugs.Contains(slug))
                 continue;
             if (!profileContext.IsServerEnabled(slug))
                 continue;

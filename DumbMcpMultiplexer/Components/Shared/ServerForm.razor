@@ -7,55 +7,52 @@
 
 @* Modal backdrop *@
 <div class="fixed inset-0 z-50 flex items-center justify-center">
-    @* Backdrop *@
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @onclick="Cancel"></div>
+    <div class="absolute inset-0 bg-black/70" @onclick="Cancel"></div>
 
     @* Modal card *@
-    <div class="relative z-10 w-full max-w-lg mx-4 rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-bold text-white">
+    <div class="relative z-10 w-full max-w-lg mx-4 bg-white border-2 border-black shadow-[8px_8px_0_0_#000] p-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between border-b-2 border-black pb-4 mb-6">
+            <h2 class="font-serif italic text-3xl text-black">
                 @(IsEditMode ? "Edit Server" : "Add Server")
             </h2>
             <button @onclick="Cancel"
-                    class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
-                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
+                    class="text-gray-400 hover:text-black text-xl font-bold transition-colors">
+                ✕
             </button>
         </div>
 
         <form @onsubmit="HandleSubmit" class="space-y-5">
             <div>
-                <label class="block text-sm font-medium text-white mb-1.5">Name</label>
+                <label class="block text-sm font-semibold text-black mb-1.5">Name</label>
                 <input type="text"
                        value="@_name"
                        @oninput="OnNameChanged"
                        placeholder="My MCP Server"
-                       class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                       class="w-full bg-white border-2 border-black px-3 py-2 text-black placeholder-gray-400 text-sm focus:outline-none" />
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-white mb-1.5">Slug</label>
+                <label class="block text-sm font-semibold text-black mb-1.5">Slug</label>
                 <input type="text"
                        value="@_slug"
                        @oninput="OnSlugManuallyEdited"
                        placeholder="my-mcp-server"
-                       class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                       class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-sm focus:outline-none" />
                 @if (!string.IsNullOrEmpty(_slugError))
                 {
-                    <p class="mt-1 text-xs text-red-400">@_slugError</p>
+                    <p class="mt-1 text-xs text-red-600">@_slugError</p>
                 }
                 else
                 {
-                    <p class="mt-1 text-xs text-gray-500">URL-safe identifier (lowercase, hyphens, underscores)</p>
+                    <p class="mt-1 text-xs text-gray-400">URL-safe identifier (lowercase, hyphens, underscores)</p>
                 }
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-white mb-1.5">Transport</label>
+                <label class="block text-sm font-semibold text-black mb-1.5">Transport</label>
                 <select value="@_transport"
                         @onchange="OnTransportChanged"
-                        class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none">
+                        class="w-full bg-white border-2 border-black px-3 py-2 text-black text-sm focus:outline-none appearance-none">
                     <option value="remote_http">Remote HTTP</option>
                     <option value="stdio_package_runner">Package Runner (uvx, npx)</option>
                     <option value="stdio_container">Container</option>
@@ -65,16 +62,16 @@
             @if (_transport == "remote_http")
             {
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">URL</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">URL</label>
                     <input type="url"
                            value="@_url"
                            @oninput="(e) => _url = e.Value?.ToString() ?? string.Empty"
                            placeholder="https://example.com/mcp"
-                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                           class="w-full bg-white border-2 border-black px-3 py-2 text-black placeholder-gray-400 text-sm focus:outline-none" />
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Headers</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">Headers</label>
                     <div class="space-y-2">
                         @for (int i = 0; i < _headers.Count; i++)
                         {
@@ -84,14 +81,14 @@
                                        value="@_headers[index].Key"
                                        @oninput="(e) => UpdateHeaderKey(index, e.Value?.ToString() ?? string.Empty)"
                                        placeholder="Header-Name"
-                                       class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                       class="flex-1 bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-xs focus:outline-none" />
                                 <input type="text"
                                        value="@_headers[index].Value"
                                        @oninput="(e) => UpdateHeaderValue(index, e.Value?.ToString() ?? string.Empty)"
                                        placeholder="value"
-                                       class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                       class="flex-1 bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-xs focus:outline-none" />
                                 <button type="button" @onclick="() => RemoveHeader(index)"
-                                        class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-red-400 transition-colors">
+                                        class="p-2 text-gray-400 hover:text-red-600 transition-colors">
                                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                     </svg>
@@ -100,7 +97,7 @@
                         }
                     </div>
                     <button type="button" @onclick="AddHeader"
-                            class="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors">
+                            class="mt-2 inline-flex items-center gap-1 border-2 border-dashed border-black px-3 py-1.5 text-xs text-gray-500 hover:text-black hover:border-gray-600 transition-colors">
                         <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                         </svg>
@@ -111,10 +108,10 @@
             else if (_transport == "stdio_package_runner")
             {
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Runner</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">Runner</label>
                     <select value="@_packageRunner"
                             @onchange="(e) => _packageRunner = e.Value?.ToString() ?? string.Empty"
-                            class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none">
+                            class="w-full bg-white border-2 border-black px-3 py-2 text-black text-sm focus:outline-none appearance-none">
                         <option value="">— Select Runner —</option>
                         <option value="uvx">uvx (Python/uv)</option>
                         <option value="npx">npx (Node.js)</option>
@@ -122,17 +119,17 @@
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Command</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">Command</label>
                     <input type="text"
                            value="@_command"
                            @oninput="(e) => _command = e.Value?.ToString() ?? string.Empty"
                            placeholder="uvx music-assistant-mcp"
-                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                    <p class="mt-1 text-xs text-gray-500">Full command to execute (e.g. "uvx music-assistant-mcp" or "npx @@modelcontextprotocol/server-filesystem /data")</p>
+                           class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-sm focus:outline-none" />
+                    <p class="mt-1 text-xs text-gray-400">Full command to execute (e.g. "uvx music-assistant-mcp" or "npx @@modelcontextprotocol/server-filesystem /data")</p>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Environment Variables</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">Environment Variables</label>
                     <div class="space-y-2">
                         @for (int i = 0; i < _envEntries.Count; i++)
                         {
@@ -142,14 +139,14 @@
                                        value="@_envEntries[index].Key"
                                        @oninput="(e) => UpdateEnvKey(index, e.Value?.ToString() ?? string.Empty)"
                                        placeholder="KEY"
-                                       class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                       class="flex-1 bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-xs focus:outline-none" />
                                 <input type="text"
                                        value="@_envEntries[index].Value"
                                        @oninput="(e) => UpdateEnvValue(index, e.Value?.ToString() ?? string.Empty)"
                                        placeholder="value"
-                                       class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                       class="flex-1 bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-xs focus:outline-none" />
                                 <button type="button" @onclick="() => RemoveEnvEntry(index)"
-                                        class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-red-400 transition-colors">
+                                        class="p-2 text-gray-400 hover:text-red-600 transition-colors">
                                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                     </svg>
@@ -158,7 +155,7 @@
                         }
                     </div>
                     <button type="button" @onclick="AddEnvEntry"
-                            class="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors">
+                            class="mt-2 inline-flex items-center gap-1 border-2 border-dashed border-black px-3 py-1.5 text-xs text-gray-500 hover:text-black hover:border-gray-600 transition-colors">
                         <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                         </svg>
@@ -167,20 +164,20 @@
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Volume Mounts (optional)</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">Volume Mounts (optional)</label>
                     <textarea rows="3"
                               value="@_mountsJson"
                               @oninput="(e) => _mountsJson = e.Value?.ToString() ?? string.Empty"
                               placeholder='["/host/path:/container/path:ro"]'
-                              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
-                    <p class="mt-1 text-xs text-gray-500">JSON array of bind mounts. Cache volume is added automatically.</p>
+                              class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-xs focus:outline-none"></textarea>
+                    <p class="mt-1 text-xs text-gray-400">JSON array of bind mounts. Cache volume is added automatically.</p>
                 </div>
             }
             else if (_transport == "stdio_container")
             {
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Container Source</label>
-                    <div class="inline-flex rounded-lg border border-gray-700 bg-gray-900 p-1">
+                    <label class="block text-sm font-semibold text-black mb-1.5">Container Source</label>
+                    <div class="inline-flex gap-1">
                         <button type="button"
                                 @onclick="() => SetContainerConfigMode(ContainerConfigModeImage)"
                                 class="@GetContainerModeButtonClass(ContainerConfigModeImage)">
@@ -197,58 +194,58 @@
                 <div>
                     @if (_containerConfigMode == ContainerConfigModeContainerfile)
                     {
-                        <label class="block text-sm font-medium text-white mb-1.5">Containerfile</label>
+                        <label class="block text-sm font-semibold text-black mb-1.5">Containerfile</label>
                         <textarea rows="8"
                                   value="@_containerfile"
                                   @oninput="(e) => _containerfile = e.Value?.ToString() ?? string.Empty"
                                   placeholder="FROM python:3.12-slim&#10;RUN pip install my-mcp-server&#10;CMD [ &quot;python&quot;, &quot;-m&quot;, &quot;my_mcp_server&quot; ]"
-                                  class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
-                        <p class="mt-1 text-xs text-gray-500">Paste a full Containerfile to build and cache an image automatically.</p>
+                                  class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-xs focus:outline-none"></textarea>
+                        <p class="mt-1 text-xs text-gray-400">Paste a full Containerfile to build and cache an image automatically.</p>
                     }
                     else
                     {
-                        <label class="block text-sm font-medium text-white mb-1.5">Container Image</label>
+                        <label class="block text-sm font-semibold text-black mb-1.5">Container Image</label>
                         <input type="text"
                                value="@_containerImage"
                                @oninput="(e) => _containerImage = e.Value?.ToString() ?? string.Empty"
                                placeholder="ghcr.io/org/mcp-server:latest"
-                               class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                        <p class="mt-1 text-xs text-gray-500">Use a pre-built image from your registry.</p>
+                               class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-sm focus:outline-none" />
+                        <p class="mt-1 text-xs text-gray-400">Use a pre-built image from your registry.</p>
                     }
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Command (optional)</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">Command (optional)</label>
                     <input type="text"
                            value="@_command"
                            @oninput="(e) => _command = e.Value?.ToString() ?? string.Empty"
                            placeholder="python -m my_mcp_server"
-                           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
-                    <p class="mt-1 text-xs text-gray-500">Overrides the image ENTRYPOINT if set.</p>
+                           class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-sm focus:outline-none" />
+                    <p class="mt-1 text-xs text-gray-400">Overrides the image ENTRYPOINT if set.</p>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Env (JSON object)</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">Env (JSON object)</label>
                     <textarea rows="3"
                               value="@_envJson"
                               @oninput="(e) => _envJson = e.Value?.ToString() ?? string.Empty"
                               placeholder="{&quot;KEY&quot;:&quot;VALUE&quot;}"
-                              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
+                              class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-xs focus:outline-none"></textarea>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-white mb-1.5">Mounts (JSON array)</label>
+                    <label class="block text-sm font-semibold text-black mb-1.5">Mounts (JSON array)</label>
                     <textarea rows="3"
                               value="@_mountsJson"
                               @oninput="(e) => _mountsJson = e.Value?.ToString() ?? string.Empty"
                               placeholder='["/host/path:/container/path:ro"]'
-                              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-white placeholder-gray-500 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"></textarea>
+                              class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-xs focus:outline-none"></textarea>
                 </div>
             }
 
             <div>
                 <button type="button" @onclick="TestConnection"
-                        class="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors">
+                        class="inline-flex items-center gap-2 border-2 border-black px-3 py-2 text-sm text-black hover:bg-gray-50 transition-colors">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                     </svg>
@@ -256,32 +253,25 @@
                 </button>
                 @if (!string.IsNullOrEmpty(_testMessage))
                 {
-                    <p class="mt-2 text-xs @(_testSuccess ? "text-emerald-400" : "text-yellow-400")">@_testMessage</p>
+                    <p class="mt-2 text-xs @(_testSuccess ? "text-emerald-700" : "text-red-600")">@_testMessage</p>
                 }
             </div>
 
             @if (!string.IsNullOrEmpty(_formError))
             {
-                <div class="rounded-lg border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
+                <div class="border-2 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">
                     @_formError
                 </div>
             }
 
-            <div class="flex items-center justify-end gap-3 pt-2">
+            <div class="flex items-center justify-end gap-3 pt-2 border-t-2 border-black">
                 <button type="button" @onclick="Cancel"
-                        class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors">
+                        class="bg-white text-black text-sm font-medium px-4 py-2 border-2 border-black shadow-[3px_3px_0_0_#000] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
                     Cancel
                 </button>
                 <button type="submit" disabled="@_saving"
-                        class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                    @if (_saving)
-                    {
-                        <span>Saving...</span>
-                    }
-                    else
-                    {
-                        <span>@(IsEditMode ? "Save Changes" : "Create Server")</span>
-                    }
+                        class="bg-black text-white text-sm font-semibold px-4 py-2 border-2 border-black transition-all hover:bg-gray-800 disabled:opacity-50">
+                    @(_saving ? "Saving..." : (IsEditMode ? "Save Changes" : "Create Server"))
                 </button>
             </div>
         </form>
@@ -368,7 +358,6 @@
             _headers = [];
         }
 
-        // Parse env JSON into key-value entries for the package runner UI
         if (_transport == "stdio_package_runner" && !string.IsNullOrWhiteSpace(Server.Env))
         {
             try
@@ -423,8 +412,8 @@
 
     private string GetContainerModeButtonClass(string mode) =>
         _containerConfigMode == mode
-            ? "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors"
-            : "rounded-md px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors";
+            ? "bg-black text-white text-xs font-semibold px-3 py-1.5 border-2 border-black transition-colors"
+            : "bg-white text-gray-600 text-xs font-medium px-3 py-1.5 border border-gray-300 hover:border-black hover:text-black transition-colors";
 
     private void UpdateHeaderKey(int index, string value)
     {
@@ -590,6 +579,8 @@
         }
     }
 
+    private void Cancel() => OnCancel.InvokeAsync();
+
     private bool TryBuildDraftServer(out McpServer draftServer, out string errorMessage)
     {
         draftServer = new McpServer
@@ -638,7 +629,6 @@
                 return false;
             }
 
-            // Build env JSON from key-value entries
             var envDict = _envEntries
                 .Where(e => !string.IsNullOrWhiteSpace(e.Key))
                 .ToDictionary(e => e.Key.Trim(), e => e.Value.Trim());
@@ -648,27 +638,31 @@
             draftServer.PackageRunner = _packageRunner.Trim();
             draftServer.Command = _command.Trim();
             draftServer.Args = null;
-            draftServer.Env = envDict.Count > 0 ? JsonSerializer.Serialize(envDict) : null;
+            draftServer.Env = JsonSerializer.Serialize(envDict);
             draftServer.ContainerMounts = normalizedMountsJson;
-
             errorMessage = string.Empty;
             return true;
         }
 
         if (draftServer.Transport == "stdio_container")
         {
-            var isContainerfileMode = _containerConfigMode == ContainerConfigModeContainerfile;
-
-            if (isContainerfileMode && string.IsNullOrWhiteSpace(_containerfile))
+            if (_containerConfigMode == ContainerConfigModeContainerfile)
             {
-                errorMessage = "Containerfile is required.";
-                return false;
+                if (string.IsNullOrWhiteSpace(_containerfile))
+                {
+                    errorMessage = "Containerfile content is required.";
+                    return false;
+                }
+                draftServer.Containerfile = _containerfile.Trim();
             }
-
-            if (!isContainerfileMode && string.IsNullOrWhiteSpace(_containerImage))
+            else
             {
-                errorMessage = "Container image is required.";
-                return false;
+                if (string.IsNullOrWhiteSpace(_containerImage))
+                {
+                    errorMessage = "Container image is required.";
+                    return false;
+                }
+                draftServer.ContainerImage = _containerImage.Trim();
             }
 
             if (!TryNormalizeJsonObject(_envJson, out var normalizedEnvJson, out errorMessage))
@@ -681,92 +675,59 @@
                 return false;
             }
 
-            draftServer.Url = null;
-            draftServer.Headers = "{}";
-            draftServer.ContainerImage = isContainerfileMode ? null : _containerImage.Trim();
-            draftServer.Containerfile = isContainerfileMode ? _containerfile.Trim() : null;
             draftServer.Command = string.IsNullOrWhiteSpace(_command) ? null : _command.Trim();
-            draftServer.Args = null;
             draftServer.Env = normalizedEnvJson;
             draftServer.ContainerMounts = normalizedMountsJson;
-
             errorMessage = string.Empty;
             return true;
         }
 
-        errorMessage = $"Unsupported transport '{draftServer.Transport}'.";
+        errorMessage = $"Unknown transport: {draftServer.Transport}";
         return false;
-    }
-
-    private static bool TryNormalizeJsonObject(string json, out string normalized, out string errorMessage)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                normalized = string.Empty;
-                errorMessage = "Env must be a JSON object.";
-                return false;
-            }
-
-            foreach (var prop in doc.RootElement.EnumerateObject())
-            {
-                if (prop.Value.ValueKind != JsonValueKind.String)
-                {
-                    normalized = string.Empty;
-                    errorMessage = $"Env value for '{prop.Name}' must be a string.";
-                    return false;
-                }
-            }
-
-            normalized = doc.RootElement.GetRawText();
-            errorMessage = string.Empty;
-            return true;
-        }
-        catch (JsonException ex)
-        {
-            normalized = string.Empty;
-            errorMessage = $"Invalid Env JSON: {ex.Message}";
-            return false;
-        }
     }
 
     private static bool TryNormalizeJsonArray(string json, out string normalized, out string errorMessage)
     {
         try
         {
-            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "[]" : json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array)
-            {
-                normalized = string.Empty;
-                errorMessage = "Args/Mounts must be JSON arrays.";
-                return false;
-            }
-
-            normalized = doc.RootElement.GetRawText();
+            var parsed = JsonSerializer.Deserialize<List<string>>(string.IsNullOrWhiteSpace(json) ? "[]" : json);
+            normalized = JsonSerializer.Serialize(parsed ?? []);
             errorMessage = string.Empty;
             return true;
         }
-        catch (JsonException ex)
+        catch
         {
-            normalized = string.Empty;
-            errorMessage = $"Invalid JSON array: {ex.Message}";
+            normalized = "[]";
+            errorMessage = "Invalid JSON array for mounts.";
             return false;
         }
     }
 
-    private async Task Cancel() => await OnCancel.InvokeAsync();
+    private static bool TryNormalizeJsonObject(string json, out string normalized, out string errorMessage)
+    {
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+            normalized = JsonSerializer.Serialize(parsed ?? new Dictionary<string, string>());
+            errorMessage = string.Empty;
+            return true;
+        }
+        catch
+        {
+            normalized = "{}";
+            errorMessage = "Invalid JSON object for environment variables.";
+            return false;
+        }
+    }
 
     private static string Slugify(string input)
     {
-        if (string.IsNullOrWhiteSpace(input))
-        {
-            return string.Empty;
-        }
-
+        if (string.IsNullOrWhiteSpace(input)) return string.Empty;
         var slug = input.ToLowerInvariant();
-        slug = Regex.Replace(slug, @"[^a-z0-9]+", "-");
-        return slug.Trim('-');
+        slug = Regex.Replace(slug, @"[^a-z0-9\-_\s]", "");
+        slug = Regex.Replace(slug, @"\s+", "-");
+        slug = Regex.Replace(slug, @"-{2,}", "-");
+        slug = slug.Trim('-', '_');
+        return slug;
     }
 }

@@ -3,111 +3,114 @@
 @using DumbMcpMultiplexer.Services
 @inject ServerService ServerService
 
-<PageTitle>Settings</PageTitle>
+<PageTitle>Settings — dumb-mcp-multiplexer</PageTitle>
 
-<div class="max-w-4xl mx-auto">
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold text-white">Settings</h1>
-        <p class="mt-2 text-gray-400">Configure global settings for the MCP proxy server.</p>
+<div class="max-w-3xl">
+    <div class="mb-10">
+        <h1 class="font-serif italic text-5xl text-black leading-tight">Settings</h1>
+        <p class="text-sm text-gray-500 mt-2">Configure global settings for the MCP proxy server.</p>
     </div>
 
-    <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
-        <div class="mb-4">
-            <h2 class="text-xl font-semibold text-white">Allowed Hosts</h2>
-            <p class="mt-1 text-sm text-gray-400">
-                Configure which hostnames are allowed to reach the <code class="text-gray-300">/mcp</code> endpoint.
+    <div class="space-y-6">
+        @* Allowed Hosts *@
+        <div class="bg-white border-2 border-black shadow-[5px_5px_0_0_#000] p-6">
+            <h2 class="font-serif italic text-2xl text-black mb-1">Allowed Hosts</h2>
+            <p class="text-sm text-gray-500 mb-5">
+                Configure which hostnames are allowed to reach the <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5 text-xs">/mcp</code> endpoint.
                 This provides protection against
-                <a href="https://en.wikipedia.org/wiki/DNS_rebinding" target="_blank" class="text-indigo-400 hover:text-indigo-300 underline">DNS rebinding attacks</a>.
-                Loopback addresses (<code class="text-gray-300">localhost</code>, <code class="text-gray-300">127.0.0.1</code>, <code class="text-gray-300">::1</code>) are always allowed regardless of this setting.
+                <a href="https://en.wikipedia.org/wiki/DNS_rebinding" target="_blank" class="underline hover:text-black transition-colors">DNS rebinding attacks</a>.
+                Loopback addresses (<code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5 text-xs">localhost</code>,
+                <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5 text-xs">127.0.0.1</code>,
+                <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5 text-xs">::1</code>) are always allowed.
             </p>
+
+            <div class="space-y-2 mb-4">
+                @if (_hosts.Count == 0)
+                {
+                    <p class="text-sm text-gray-400 italic">No allowed hosts configured. Only loopback addresses will be permitted.</p>
+                }
+                else
+                {
+                    @for (int i = 0; i < _hosts.Count; i++)
+                    {
+                        var index = i;
+                        <div class="flex items-center gap-2">
+                            <input type="text"
+                                   value="@_hosts[index]"
+                                   @oninput="(e) => UpdateHost(index, e.Value?.ToString() ?? string.Empty)"
+                                   placeholder="e.g. myhost.example.com"
+                                   class="flex-1 bg-white border-2 border-black px-3 py-2 text-black font-mono text-sm placeholder-gray-400 focus:outline-none" />
+                            <button @onclick="() => RemoveHost(index)"
+                                    class="text-gray-400 hover:text-red-600 px-2 py-1 text-lg font-bold transition-colors"
+                                    title="Remove host">
+                                ✕
+                            </button>
+                        </div>
+                    }
+                }
+            </div>
+
+            <button @onclick="AddHost" class="text-sm font-medium text-black underline hover:no-underline transition-colors">
+                + Add Host
+            </button>
         </div>
 
-        <div class="space-y-2 mb-4">
-            @if (_hosts.Count == 0)
+        @* API Key *@
+        <div class="bg-white border-2 border-black shadow-[5px_5px_0_0_#000] p-6">
+            <h2 class="font-serif italic text-2xl text-black mb-1">API Key</h2>
+            <p class="text-sm text-gray-500 mb-5">
+                When set, all requests to the <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5 text-xs">/mcp</code> endpoint must include the key as
+                <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5 text-xs">Authorization: Bearer &lt;key&gt;</code> or
+                <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5 text-xs">?api_key=&lt;key&gt;</code>.
+                Leave unset to keep the endpoint open (e.g. for local-only use).
+            </p>
+
+            @if (_apiKey is null)
             {
-                <p class="text-gray-500 italic text-sm">No allowed hosts configured. Only loopback addresses will be permitted.</p>
+                <p class="text-sm text-gray-400 italic mb-4">No API key configured. The /mcp endpoint is publicly accessible.</p>
             }
             else
             {
-                @for (int i = 0; i < _hosts.Count; i++)
-                {
-                    var index = i;
-                    <div class="flex items-center gap-2">
-                        <input type="text"
-                               value="@_hosts[index]"
-                               @oninput="(e) => UpdateHost(index, e.Value?.ToString() ?? string.Empty)"
-                               placeholder="e.g. myhost.example.com"
-                               class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white font-mono text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
-                        <button @onclick="() => RemoveHost(index)"
-                                class="text-gray-400 hover:text-red-400 px-2 py-1 text-lg font-bold"
-                                title="Remove host">
-                            ✕
-                        </button>
-                    </div>
-                }
+                <div class="flex items-center gap-2 mb-4">
+                    <input type="@(_showApiKey ? "text" : "password")"
+                           value="@_apiKey"
+                           readonly
+                           class="flex-1 bg-white border-2 border-black px-3 py-2 text-black font-mono text-sm focus:outline-none" />
+                    <button @onclick="() => _showApiKey = !_showApiKey"
+                            class="bg-white text-black text-sm font-medium px-3 py-2 border-2 border-black shadow-[3px_3px_0_0_#000] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
+                        @(_showApiKey ? "Hide" : "Show")
+                    </button>
+                </div>
             }
-        </div>
 
-        <button @onclick="AddHost" class="text-indigo-400 hover:text-indigo-300 text-sm font-medium">
-            + Add Host
-        </button>
-    </div>
-
-    <div class="mt-6 bg-gray-900 border border-gray-800 rounded-lg p-6">
-        <div class="mb-4">
-            <h2 class="text-xl font-semibold text-white">API Key</h2>
-            <p class="mt-1 text-sm text-gray-400">
-                When set, all requests to the <code class="text-gray-300">/mcp</code> endpoint must include the key as
-                <code class="text-gray-300">Authorization: Bearer &lt;key&gt;</code> or <code class="text-gray-300">?api_key=&lt;key&gt;</code>.
-                Leave unset to keep the endpoint open (e.g. for local-only use).
-            </p>
-        </div>
-
-        @if (_apiKey is null)
-        {
-            <p class="text-gray-500 italic text-sm mb-4">No API key configured. The /mcp endpoint is publicly accessible.</p>
-        }
-        else
-        {
-            <div class="flex items-center gap-2 mb-4">
-                <input type="@(_showApiKey ? "text" : "password")"
-                       value="@_apiKey"
-                       readonly
-                       class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white font-mono text-sm focus:outline-none" />
-                <button @onclick="() => _showApiKey = !_showApiKey"
-                        class="text-gray-400 hover:text-white px-3 py-2 text-sm border border-gray-700 rounded bg-gray-800 hover:bg-gray-700 transition-colors">
-                    @(_showApiKey ? "Hide" : "Show")
-                </button>
-            </div>
-        }
-
-        <div class="flex gap-2">
-            <button @onclick="GenerateApiKey"
-                    disabled="@_savingApiKey"
-                    class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded px-4 py-2 text-sm transition-colors">
-                @(_apiKey is null ? "Generate API Key" : "Regenerate")
-            </button>
-            @if (_apiKey is not null)
-            {
-                <button @onclick="RevokeApiKey"
+            <div class="flex gap-3">
+                <button @onclick="GenerateApiKey"
                         disabled="@_savingApiKey"
-                        class="bg-red-900/50 hover:bg-red-800 disabled:opacity-50 text-red-300 font-medium rounded px-4 py-2 text-sm transition-colors border border-red-800">
-                    Revoke
+                        class="bg-black text-white text-sm font-semibold px-4 py-2 border-2 border-black transition-all hover:bg-gray-800 disabled:opacity-50">
+                    @(_apiKey is null ? "Generate API Key" : "Regenerate")
                 </button>
-            }
+                @if (_apiKey is not null)
+                {
+                    <button @onclick="RevokeApiKey"
+                            disabled="@_savingApiKey"
+                            class="bg-white text-red-600 text-sm font-medium px-4 py-2 border-2 border-red-600 shadow-[3px_3px_0_0_#dc2626] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all disabled:opacity-50">
+                        Revoke
+                    </button>
+                }
+            </div>
         </div>
     </div>
 
     @if (!string.IsNullOrEmpty(_successMessage))
     {
-        <div class="mt-4 bg-emerald-900/30 border border-emerald-800 rounded-lg px-4 py-3 text-emerald-300 text-sm">
+        <div class="mt-5 border-2 border-emerald-600 bg-emerald-50 px-4 py-3 text-emerald-800 text-sm">
             @_successMessage
         </div>
     }
 
     @if (!string.IsNullOrEmpty(_errorMessage))
     {
-        <div class="mt-4 bg-red-900/30 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">
+        <div class="mt-5 border-2 border-red-500 bg-red-50 px-4 py-3 text-red-700 text-sm">
             @_errorMessage
         </div>
     }
@@ -115,15 +118,8 @@
     <div class="mt-6">
         <button @onclick="SaveSettings"
                 disabled="@_saving"
-                class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded px-4 py-2 text-sm transition-colors">
-            @if (_saving)
-            {
-                <span>Saving...</span>
-            }
-            else
-            {
-                <span>Save Settings</span>
-            }
+                class="bg-black text-white text-sm font-semibold px-5 py-2.5 border-2 border-black transition-all hover:bg-gray-800 disabled:opacity-50">
+            @(_saving ? "Saving..." : "Save Settings")
         </button>
     </div>
 </div>
@@ -232,7 +228,6 @@
             await ServerService.SetSettingAsync("allowed_hosts", commaSeparatedValue);
             _successMessage = "Settings saved successfully.";
 
-            // Refresh the list to remove any empty entries
             _hosts = commaSeparatedValue.Split(',', StringSplitOptions.RemoveEmptyEntries)
                                         .Select(h => h.Trim())
                                         .ToList();

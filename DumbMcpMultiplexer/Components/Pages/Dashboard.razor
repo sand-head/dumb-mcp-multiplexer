@@ -8,15 +8,15 @@
 
 <PageTitle>Dashboard — dumb-mcp-multiplexer</PageTitle>
 
-<div class="min-h-screen bg-gray-950 p-6 md:p-10">
+<div>
     @* Header *@
-    <div class="flex items-center justify-between mb-8">
+    <div class="flex items-start justify-between mb-10">
         <div>
-            <h1 class="text-2xl font-bold text-white">Dashboard</h1>
-            <p class="text-gray-400 text-sm mt-1">Manage your MCP server connections</p>
+            <h1 class="font-serif italic text-5xl text-black leading-tight">Dashboard</h1>
+            <p class="text-sm text-gray-500 mt-2">Manage your MCP server connections</p>
         </div>
         <button @onclick="OpenAddModal"
-                class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-500 transition-colors">
+                class="flex items-center gap-2 bg-black text-white text-sm font-semibold px-5 py-2.5 border-2 border-black transition-all hover:bg-gray-800 mt-2 shrink-0">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
@@ -28,39 +28,38 @@
     @if (_servers is null)
     {
         <div class="flex items-center justify-center py-20">
-            <div class="text-gray-400">Loading...</div>
+            <p class="font-serif italic text-2xl text-gray-400">Loading...</p>
         </div>
     }
     else if (_servers.Count == 0)
     {
-        <div class="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-700 py-20">
-            <svg class="h-12 w-12 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                      d="M5 12h14M12 5v14"/>
+        <div class="flex flex-col items-center justify-center border-2 border-dashed border-black py-20 bg-white">
+            <svg class="h-12 w-12 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14M12 5v14"/>
             </svg>
-            <p class="text-gray-400 text-lg mb-2">No servers configured</p>
+            <p class="font-serif italic text-2xl text-black mb-2">No servers configured</p>
             <p class="text-gray-500 text-sm mb-6">Add your first MCP server to get started.</p>
             <button @onclick="OpenAddModal"
-                    class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors">
+                    class="bg-black text-white text-sm font-semibold px-5 py-2.5 border-2 border-black transition-all hover:bg-gray-800">
                 Add Server
             </button>
         </div>
     }
     else
     {
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             @foreach (var server in _servers)
             {
                 <a href="/servers/@server.Slug"
-                   class="group block rounded-2xl border border-gray-800 bg-gray-900 p-5 shadow transition-colors hover:border-gray-600 hover:bg-gray-800/80">
+                   class="group block bg-white border-2 border-black shadow-[5px_5px_0_0_#000] p-5 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#000] transition-all">
                     <div class="flex items-start justify-between mb-3">
-                        <h2 class="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors truncate">
+                        <h2 class="font-serif italic text-xl text-black group-hover:underline leading-snug truncate">
                             @server.Name
                         </h2>
                         @{
                             var status = GetStatus(server);
                         }
-                        <span class="ml-2 mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium @status.BadgeClass">
+                        <span class="ml-2 mt-1 shrink-0 inline-flex items-center gap-1 text-xs font-mono font-semibold px-2 py-0.5 @status.BadgeClass">
                             @if (status.ShowSpinner)
                             {
                                 <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -68,13 +67,13 @@
                                     <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
                                 </svg>
                             }
-                            <span>@status.Label</span>
+                            @status.Label
                         </span>
                     </div>
-                    <p class="text-sm font-mono text-gray-400 mb-2 truncate">@server.Slug</p>
+                    <p class="text-xs font-mono text-gray-500 mb-1 truncate">@server.Slug</p>
                     @if (!string.IsNullOrEmpty(server.Url))
                     {
-                        <p class="text-xs text-gray-500 truncate" title="@server.Url">@server.Url</p>
+                        <p class="text-xs text-gray-400 truncate" title="@server.Url">@server.Url</p>
                     }
                 </a>
             }
@@ -124,34 +123,34 @@
     {
         if (!server.Enabled)
         {
-            return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+            return new ServerStatusBadge("Stopped", "bg-gray-100 text-gray-600 border border-gray-400");
         }
 
         if (server.Transport == "stdio_package_runner" || server.Transport == "stdio_container")
         {
             if (!StdioLifecycleService.States.TryGetValue(server.Slug, out var lifecycle))
             {
-                return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+                return new ServerStatusBadge("Stopped", "bg-gray-100 text-gray-600 border border-gray-400");
             }
 
             return lifecycle.State switch
             {
-                LifecycleState.Running => new ServerStatusBadge("Running", "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"),
-                LifecycleState.Crashed => new ServerStatusBadge("Crashed", "border-red-700/60 bg-red-950/40 text-red-300"),
-                LifecycleState.Restarting => new ServerStatusBadge("Restarting", "border-yellow-700/60 bg-yellow-950/40 text-yellow-300", true),
-                _ => new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400"),
+                LifecycleState.Running => new ServerStatusBadge("Running", "bg-emerald-500 text-white"),
+                LifecycleState.Crashed => new ServerStatusBadge("Crashed", "bg-red-500 text-white"),
+                LifecycleState.Restarting => new ServerStatusBadge("Restarting", "bg-amber-400 text-black", true),
+                _ => new ServerStatusBadge("Stopped", "bg-gray-100 text-gray-600 border border-gray-400"),
             };
         }
 
         if (!UpstreamManager.Connections.ContainsKey(server.Slug))
         {
-            return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+            return new ServerStatusBadge("Stopped", "bg-gray-100 text-gray-600 border border-gray-400");
         }
 
         var health = GetHealthStatus(server.Slug);
         return health == UpstreamHealthStatus.Degraded
-            ? new ServerStatusBadge("Degraded", "border-amber-700/60 bg-amber-950/40 text-amber-300")
-            : new ServerStatusBadge("Running", "border-emerald-700/60 bg-emerald-950/40 text-emerald-300");
+            ? new ServerStatusBadge("Degraded", "bg-amber-400 text-black")
+            : new ServerStatusBadge("Running", "bg-emerald-500 text-white");
     }
 
     private UpstreamHealthStatus GetHealthStatus(string slug)

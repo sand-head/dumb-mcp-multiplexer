@@ -4,53 +4,55 @@
 @using DumbMcpMultiplexer.Services
 @inject ProfileService ProfileService
 
-<PageTitle>Profiles - Dumb MCP Multiplexer</PageTitle>
+<PageTitle>Profiles — dumb-mcp-multiplexer</PageTitle>
 
-<div class="space-y-6">
-    <div class="flex items-center justify-between">
+<div>
+    <div class="flex items-start justify-between mb-10">
         <div>
-            <h2 class="text-2xl font-bold text-gray-100">Profiles</h2>
-            <p class="text-gray-400 mt-1">Choose which servers and tools are available for each profile endpoint</p>
+            <h1 class="font-serif italic text-5xl text-black leading-tight">Profiles</h1>
+            <p class="text-sm text-gray-500 mt-2">Choose which servers and tools are available for each profile endpoint</p>
         </div>
         <button @onclick="CreateProfile"
-                class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors">
-            New profile
+                class="bg-black text-white text-sm font-semibold px-5 py-2.5 border-2 border-black transition-all hover:bg-gray-800 mt-2 shrink-0">
+            New Profile
         </button>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_status))
     {
-        <div class="text-sm text-emerald-300">@_status</div>
+        <div class="mb-4 border-2 border-emerald-600 bg-emerald-50 px-4 py-3 text-emerald-800 text-sm">@_status</div>
     }
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
-        <div class="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 text-sm">@_error</div>
+        <div class="mb-4 border-2 border-red-500 bg-red-50 px-4 py-3 text-red-700 text-sm">@_error</div>
     }
 
-    <div class="grid gap-4">
+    <div class="space-y-4">
         @foreach (var profile in _profiles)
         {
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="bg-white border-2 border-black shadow-[5px_5px_0_0_#000] p-5">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-lg font-semibold text-gray-100">@profile.Name</h3>
+                        <div class="flex items-center gap-3">
+                            <h3 class="font-serif italic text-2xl text-black">@profile.Name</h3>
                             @if (profile.IsDefault)
                             {
-                                <span class="px-2 py-0.5 text-xs rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Default</span>
+                                <span class="text-xs font-mono font-semibold px-2 py-0.5 bg-black text-white">Default</span>
                             }
                         </div>
-                        <p class="text-sm text-gray-400 mt-1">@profile.IncludedServerCount server(s) included</p>
-                        <p class="text-xs text-gray-500 mt-1">Endpoint: <code class="text-gray-300">/mcp/@Uri.EscapeDataString(profile.Name)</code></p>
+                        <p class="text-sm text-gray-500 mt-1">@profile.IncludedServerCount server(s) included</p>
+                        <p class="text-xs text-gray-400 mt-1">
+                            Endpoint: <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5">/mcp/@Uri.EscapeDataString(profile.Name)</code>
+                        </p>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 shrink-0">
                         <button @onclick="() => EditProfileAsync(profile.Id)"
-                                class="px-3 py-1.5 text-sm rounded-lg border border-gray-700 text-gray-200 hover:bg-gray-800 transition-colors">
+                                class="bg-white text-black text-sm font-medium px-3 py-1.5 border-2 border-black shadow-[3px_3px_0_0_#000] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
                             Edit
                         </button>
                         <button @onclick="() => DeleteProfileAsync(profile.Id)"
-                                class="px-3 py-1.5 text-sm rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/10 transition-colors">
+                                class="bg-white text-red-600 text-sm font-medium px-3 py-1.5 border-2 border-red-600 shadow-[3px_3px_0_0_#dc2626] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
                             Delete
                         </button>
                     </div>
@@ -62,68 +64,70 @@
 
 @if (_editor is not null)
 {
-    <div class="fixed inset-0 z-50 bg-black/60 p-4 overflow-auto">
-        <div class="max-w-4xl mx-auto bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
-            <div class="flex items-center justify-between">
-                <h3 class="text-xl font-semibold text-gray-100">@(_editing ? "Edit profile" : "Create profile")</h3>
-                <button @onclick="CancelEdit" class="text-gray-400 hover:text-gray-200">✕</button>
+    <div class="fixed inset-0 z-50 bg-black/70 p-4 overflow-auto">
+        <div class="max-w-4xl mx-auto bg-white border-2 border-black shadow-[8px_8px_0_0_#000] p-6 space-y-5 my-8">
+            <div class="flex items-center justify-between border-b-2 border-black pb-4">
+                <h3 class="font-serif italic text-3xl text-black">@(_editing ? "Edit Profile" : "Create Profile")</h3>
+                <button @onclick="CancelEdit" class="text-gray-400 hover:text-black text-xl font-bold transition-colors">✕</button>
             </div>
 
             <div class="grid md:grid-cols-2 gap-4">
-                <label class="space-y-2">
-                    <span class="text-sm text-gray-300">Name</span>
+                <label class="space-y-1.5">
+                    <span class="text-sm font-semibold text-black">Name</span>
                     <input @bind="_editor.Name"
-                           class="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                           class="w-full bg-white border-2 border-black px-3 py-2 text-black focus:outline-none" />
                 </label>
                 <label class="inline-flex items-center gap-2 mt-7">
-                    <input type="checkbox" @bind="_editor.IsDefault" />
-                    <span class="text-sm text-gray-300">Mark as default</span>
+                    <input type="checkbox" @bind="_editor.IsDefault" class="accent-black w-4 h-4" />
+                    <span class="text-sm text-black">Mark as default</span>
                 </label>
             </div>
 
-            <div class="rounded-lg border border-gray-800 bg-gray-950 p-4">
+            <div class="border-2 border-black bg-gray-50 p-4">
                 <label class="inline-flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" @bind="_editor.CodeModeEnabled" />
-                    <span class="text-sm text-gray-100 font-medium">Enable Code Mode</span>
+                    <input type="checkbox" @bind="_editor.CodeModeEnabled" class="accent-black w-4 h-4" />
+                    <span class="text-sm text-black font-semibold">Enable Code Mode</span>
                 </label>
-                <p class="mt-2 text-xs text-gray-400">
-                    When enabled, downstream clients see only <code class="text-gray-300">search</code>,
-                    <code class="text-gray-300">get_schema</code>, and <code class="text-gray-300">execute</code> meta-tools
+                <p class="mt-2 text-xs text-gray-500">
+                    When enabled, downstream clients see only <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5">search</code>,
+                    <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5">get_schema</code>, and
+                    <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5">execute</code> meta-tools
                     instead of the full tool list. Clients discover tools on demand and invoke them by writing Lua code
                     in a sandboxed environment.
                 </p>
                 @if (_editor.CodeModeEnabled)
                 {
-                    <div class="mt-3 pl-6 border-l border-gray-700">
+                    <div class="mt-3 pl-6 border-l-2 border-black">
                         <label class="inline-flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" @bind="_editor.CodeModeToonEnabled" />
-                            <span class="text-sm text-gray-100">Return responses in TOON format</span>
+                            <input type="checkbox" @bind="_editor.CodeModeToonEnabled" class="accent-black w-4 h-4" />
+                            <span class="text-sm text-black">Return responses in TOON format</span>
                         </label>
                         <p class="mt-1 text-xs text-gray-500">
-                            Encodes <code class="text-gray-400">search</code> and <code class="text-gray-400">get_schema</code> results
+                            Encodes <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5">search</code> and
+                            <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5">get_schema</code> results
                             as Token-Oriented Object Notation instead of plain text. Structured values returned from
-                            <code class="text-gray-400">execute</code> are also re-encoded. Reduces token usage by 30–60% for
-                            uniform payloads.
+                            <code class="font-mono bg-gray-100 border border-gray-300 px-1 py-0.5">execute</code> are also re-encoded.
+                            Reduces token usage by 30–60% for uniform payloads.
                         </p>
                     </div>
                 }
             </div>
 
-            <div class="space-y-4 max-h-[55vh] overflow-auto pr-2">
+            <div class="space-y-3 max-h-[55vh] overflow-auto pr-2">
                 @foreach (var server in _editor.Servers.OrderBy(s => s.ServerName))
                 {
-                    <div class="rounded-lg border border-gray-800 bg-gray-950 p-4 space-y-3">
+                    <div class="border-2 border-black bg-gray-50 p-4 space-y-3">
                         <div class="flex items-center justify-between">
-                            <label class="inline-flex items-center gap-2">
-                                <input type="checkbox" @bind="server.Included" />
-                                <span class="text-sm text-gray-100 font-medium">@server.ServerName</span>
-                                <span class="text-xs text-gray-500">@server.ServerSlug</span>
+                            <label class="inline-flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" @bind="server.Included" class="accent-black w-4 h-4" />
+                                <span class="text-sm text-black font-semibold">@server.ServerName</span>
+                                <span class="text-xs font-mono text-gray-400">@server.ServerSlug</span>
                             </label>
 
                             @if (server.Included)
                             {
-                                <label class="inline-flex items-center gap-2 text-sm text-gray-300">
-                                    <input type="checkbox" @bind="server.Enabled" />
+                                <label class="inline-flex items-center gap-2 text-sm text-gray-600">
+                                    <input type="checkbox" @bind="server.Enabled" class="accent-black w-4 h-4" />
                                     Enabled in profile
                                 </label>
                             }
@@ -132,12 +136,12 @@
                         @if (server.Included && server.ToolCapabilities.Count > 0)
                         {
                             <div class="pl-5 space-y-2">
-                                <p class="text-xs uppercase tracking-wide text-gray-500">Tools</p>
+                                <p class="text-xs uppercase tracking-widest text-gray-400 font-semibold">Tools</p>
                                 @foreach (var tool in server.ToolCapabilities.OrderBy(t => t.Name))
                                 {
-                                    <label class="inline-flex items-center gap-2 mr-4 text-sm text-gray-300">
-                                        <input type="checkbox" @bind="tool.Enabled" />
-                                        <span class="font-mono">@tool.Name</span>
+                                    <label class="inline-flex items-center gap-2 mr-4 text-sm text-black cursor-pointer">
+                                        <input type="checkbox" @bind="tool.Enabled" class="accent-black w-4 h-4" />
+                                        <span class="font-mono text-xs">@tool.Name</span>
                                     </label>
                                 }
                             </div>
@@ -146,14 +150,14 @@
                 }
             </div>
 
-            <div class="flex justify-end gap-2">
+            <div class="flex justify-end gap-3 border-t-2 border-black pt-4">
                 <button @onclick="CancelEdit"
-                        class="px-3 py-2 text-sm rounded-lg border border-gray-700 text-gray-200 hover:bg-gray-800 transition-colors">
+                        class="bg-white text-black text-sm font-medium px-4 py-2 border-2 border-black shadow-[3px_3px_0_0_#000] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
                     Cancel
                 </button>
                 <button @onclick="SaveProfileAsync"
-                        class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">
-                    Save profile
+                        class="bg-black text-white text-sm font-semibold px-4 py-2 border-2 border-black transition-all hover:bg-gray-800">
+                    Save Profile
                 </button>
             </div>
         </div>

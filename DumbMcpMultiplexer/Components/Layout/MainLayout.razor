@@ -1,42 +1,41 @@
 ﻿@inherits LayoutComponentBase
 @using System.Reflection
 
-<div class="min-h-screen flex flex-col bg-gray-950 text-gray-100">
-    <header class="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
+<div class="min-h-screen flex flex-col">
+    <header class="bg-white border-b-2 border-black sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex items-center justify-between h-14">
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
-                        <span class="text-white font-bold text-sm">M</span>
+                    <div class="w-8 h-8 bg-black flex items-center justify-center shrink-0">
+                        <span class="text-white font-bold text-sm font-mono">M</span>
                     </div>
-                    <h1 class="text-lg font-semibold text-gray-100">dumb-mcp-multiplexer</h1>
+                    <h1 class="font-serif italic text-xl text-black">dumb-mcp-multiplexer</h1>
                 </div>
-                <nav class="flex items-center gap-4">
-                    <a href="/" class="text-sm text-gray-300 hover:text-white transition-colors">
+                <nav class="flex items-center gap-6">
+                    <a href="/" class="text-sm font-medium text-black hover:underline transition-colors">
                         Servers
                     </a>
-                    <a href="/profiles" class="text-sm text-gray-400 hover:text-white transition-colors">
+                    <a href="/profiles" class="text-sm text-gray-500 hover:text-black hover:underline transition-colors">
                         Profiles
                     </a>
-                    <a href="/settings" class="text-sm text-gray-400 hover:text-white transition-colors">
+                    <a href="/settings" class="text-sm text-gray-500 hover:text-black hover:underline transition-colors">
                         Settings
                     </a>
-
                 </nav>
             </div>
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+    <main class="max-w-7xl mx-auto px-6 py-10 w-full">
         @Body
     </main>
 
-    <footer class="border-t border-gray-800 py-4">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <footer class="border-t-2 border-black py-4 mt-auto bg-white">
+        <div class="max-w-7xl mx-auto px-6">
             <p class="text-xs text-gray-500 text-center">
-                dumb-mcp-multiplexer <span class="text-gray-600">v@_appVersion</span> &middot; Aggregating MCP endpoint at
-                <code class="text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded">POST /mcp</code> or
-                <code class="text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded">POST /mcp/{profile}</code>
+                dumb-mcp-multiplexer <span class="text-gray-400">v@_appVersion</span> &middot; Aggregating MCP endpoint at
+                <code class="font-mono bg-gray-100 border border-gray-300 px-1.5 py-0.5">POST /mcp</code> or
+                <code class="font-mono bg-gray-100 border border-gray-300 px-1.5 py-0.5">POST /mcp/{profile}</code>
             </p>
         </div>
     </footer>

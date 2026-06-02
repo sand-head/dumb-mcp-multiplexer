@@ -15,16 +15,16 @@
 @if (loading)
 {
     <div class="flex items-center justify-center min-h-[400px]">
-        <p class="text-gray-400">Loading...</p>
+        <p class="font-serif italic text-2xl text-gray-400">Loading...</p>
     </div>
 }
 else if (server is null)
 {
     <div class="flex flex-col items-center justify-center min-h-[400px] gap-4">
         <div class="text-6xl">🔍</div>
-        <h2 class="text-2xl font-bold text-white">Server Not Found</h2>
-        <p class="text-gray-400">No server with slug "<span class="font-mono text-yellow-400">@Slug</span>" exists.</p>
-        <a href="/" class="mt-4 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+        <h2 class="font-serif italic text-3xl text-black">Server Not Found</h2>
+        <p class="text-gray-500">No server with slug "<span class="font-mono text-black">@Slug</span>" exists.</p>
+        <a href="/" class="mt-4 bg-white text-black text-sm font-medium px-4 py-2 border-2 border-black shadow-[3px_3px_0_0_#000] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
             ← Back to Dashboard
         </a>
     </div>
@@ -34,56 +34,59 @@ else
     @* Header *@
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div class="flex items-center gap-4">
-            <a href="/" class="text-gray-400 hover:text-white transition-colors text-sm">
-                ← Back
-            </a>
+            <a href="/" class="text-sm text-gray-500 hover:text-black hover:underline transition-colors">← Back</a>
             <div>
-                <h1 class="text-2xl font-bold text-white">@server.Name</h1>
-                <p class="text-sm text-gray-400 font-mono">@server.Slug</p>
+                <h1 class="font-serif italic text-4xl text-black leading-tight">@server.Name</h1>
+                <p class="text-xs font-mono text-gray-500 mt-0.5">@server.Slug</p>
             </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
             @if (!string.IsNullOrWhiteSpace(server.Containerfile))
             {
                 <button @onclick="RebuildImage"
                         disabled="@rebuilding"
-                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors">
+                        class="bg-black text-white text-sm font-semibold px-4 py-2 border-2 border-black transition-all hover:bg-gray-800 disabled:opacity-50">
                     @(rebuilding ? "Rebuilding..." : "Rebuild Image")
                 </button>
             }
             <button @onclick="ToggleEnabled"
-                    class="@ToggleButtonClass px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    class="@ToggleButtonClass text-sm font-semibold px-4 py-2 border-2 transition-all">
                 @(server.Enabled ? "Disable" : "Enable")
             </button>
             <button @onclick="OpenEditModal"
-                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors">
+                    class="bg-white text-black text-sm font-medium px-4 py-2 border-2 border-black shadow-[3px_3px_0_0_#000] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
                 Edit
             </button>
             <button @onclick="OpenDeleteModal"
-                    class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors">
+                    class="bg-white text-red-600 text-sm font-medium px-4 py-2 border-2 border-red-600 shadow-[3px_3px_0_0_#dc2626] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
                 Delete
             </button>
         </div>
     </div>
 
+    @if (!string.IsNullOrWhiteSpace(rebuildMessage))
+    {
+        <div class="mb-6 border-2 @(rebuildSuccess ? "border-emerald-600 bg-emerald-50 text-emerald-800" : "border-red-500 bg-red-50 text-red-700") px-4 py-3 text-sm">
+            @rebuildMessage
+        </div>
+    }
+
     @* Configuration Panel *@
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-        <h2 class="text-lg font-semibold text-white mb-4">Configuration</h2>
+    <div class="bg-white border-2 border-black shadow-[5px_5px_0_0_#000] p-6 mb-6">
+        <h2 class="font-serif italic text-2xl text-black mb-5">Configuration</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            @* Transport *@
             <div>
-                <dt class="text-sm text-gray-400 mb-1">Transport</dt>
-                <dd class="text-white font-medium">@FormatTransport(server.Transport)</dd>
+                <dt class="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">Transport</dt>
+                <dd class="text-black font-medium">@FormatTransport(server.Transport)</dd>
             </div>
 
-            @* Status *@
             <div>
-                <dt class="text-sm text-gray-400 mb-1">Status</dt>
+                <dt class="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">Status</dt>
                 @{
                     var status = GetStatusBadge();
                 }
                 <dd class="flex items-center gap-2">
-                    <span class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium @status.BadgeClass">
+                    <span class="inline-flex items-center gap-1 text-xs font-mono font-semibold px-2 py-0.5 @status.BadgeClass">
                         @if (status.ShowSpinner)
                         {
                             <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -91,87 +94,76 @@ else
                                 <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
                             </svg>
                         }
-                        <span>@status.Label</span>
+                        @status.Label
                     </span>
                 </dd>
                 @if (ShowLifecycleDiagnostics)
                 {
-                    <p class="mt-2 text-xs text-gray-400">Retry count: @CurrentLifecycleStatus!.RetryCount</p>
+                    <p class="mt-2 text-xs text-gray-500">Retry count: @CurrentLifecycleStatus!.RetryCount</p>
                     @if (!string.IsNullOrWhiteSpace(CurrentLifecycleStatus.LastError))
                     {
-                        <p class="mt-1 text-xs text-red-300">@CurrentLifecycleStatus.LastError</p>
+                        <p class="mt-1 text-xs text-red-600">@CurrentLifecycleStatus.LastError</p>
                     }
                 }
             </div>
 
-            @* URL *@
             <div>
-                <dt class="text-sm text-gray-400 mb-1">@EndpointLabel</dt>
-                <dd class="text-white font-mono text-sm break-all">
-                    @EndpointValue
-                </dd>
+                <dt class="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">@EndpointLabel</dt>
+                <dd class="text-black font-mono text-sm break-all">@EndpointValue</dd>
             </div>
 
-            @* Custom Headers *@
             <div>
-                <dt class="text-sm text-gray-400 mb-1">Custom Headers</dt>
-                <dd class="text-white font-medium">@HeaderCount header@(HeaderCount == 1 ? "" : "s") configured</dd>
+                <dt class="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">Custom Headers</dt>
+                <dd class="text-black font-medium">@HeaderCount header@(HeaderCount == 1 ? "" : "s") configured</dd>
             </div>
         </div>
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(rebuildMessage))
-    {
-        <div class="mb-6 rounded-lg border @(rebuildSuccess ? "border-green-700/50 bg-green-950/30" : "border-red-700/50 bg-red-950/30") px-4 py-3 text-sm @(rebuildSuccess ? "text-green-300" : "text-red-300")">
-            @rebuildMessage
-        </div>
-    }
-
     @* Tool Controls *@
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-        <div class="flex items-start justify-between gap-4 mb-4">
+    <div class="bg-white border-2 border-black shadow-[5px_5px_0_0_#000] p-6 mb-6">
+        <div class="flex items-start justify-between gap-4 mb-5">
             <div>
-                <h2 class="text-lg font-semibold text-white">Tool Controls</h2>
-                <p class="text-sm text-gray-400">View discovered tools and enable or disable them individually.</p>
+                <h2 class="font-serif italic text-2xl text-black">Tool Controls</h2>
+                <p class="text-sm text-gray-500 mt-1">View discovered tools and enable or disable them individually.</p>
             </div>
             <button @onclick="RefreshToolsAsync"
                     disabled="@toolsLoading"
-                    class="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white rounded-lg text-sm font-medium transition-colors">
+                    class="bg-white text-black text-sm font-medium px-4 py-2 border-2 border-black shadow-[3px_3px_0_0_#000] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all disabled:opacity-50 shrink-0">
                 @(toolsLoading ? "Refreshing..." : "Refresh Tools")
             </button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(toolsError))
         {
-            <div class="mb-4 rounded-lg border border-yellow-700/50 bg-yellow-950/30 px-3 py-2 text-sm text-yellow-300">
+            <div class="mb-4 border-2 border-yellow-500 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
                 @toolsError
             </div>
         }
 
         @if (toolCapabilities.Count == 0)
         {
-            <p class="text-sm text-gray-400">No tools discovered yet. Use "Refresh Tools" while this server is connected.</p>
+            <p class="text-sm text-gray-400 italic">No tools discovered yet. Use "Refresh Tools" while this server is connected.</p>
         }
         else
         {
             <div class="space-y-3">
                 @foreach (var capability in toolCapabilities)
                 {
-                    <div class="rounded-lg border border-gray-800 bg-gray-950/60 p-4">
+                    <div class="border-2 border-black p-4 bg-gray-50">
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                                <p class="text-white font-mono text-sm">@capability.Name</p>
+                                <p class="text-black font-mono text-sm">@capability.Name</p>
                                 @if (!string.IsNullOrWhiteSpace(capability.Description))
                                 {
-                                    <p class="text-sm text-gray-400 mt-1">@capability.Description</p>
+                                    <p class="text-sm text-gray-500 mt-1">@capability.Description</p>
                                 }
                             </div>
-                            <div class="flex items-center gap-2">
-                                <span class="text-xs px-2 py-1 rounded-full @(capability.Enabled ? "bg-green-950 text-green-300 border border-green-800" : "bg-red-950 text-red-300 border border-red-800")">
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="text-xs font-mono font-semibold px-2 py-0.5 @(capability.Enabled ? "bg-emerald-500 text-white" : "bg-gray-100 text-gray-600 border border-gray-400")">
                                     @(capability.Enabled ? "Enabled" : "Disabled")
                                 </span>
                                 <button @onclick="() => ToggleToolEnabledAsync(capability.Name)"
-                                        class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors @(capability.Enabled ? "bg-yellow-600 hover:bg-yellow-700 text-white" : "bg-green-600 hover:bg-green-700 text-white")">
+                                        class="@(capability.Enabled ? "bg-white text-amber-700 border-amber-600 shadow-[2px_2px_0_0_#d97706]" : "bg-white text-emerald-700 border-emerald-600 shadow-[2px_2px_0_0_#059669]") text-xs font-medium px-3 py-1.5 border-2 hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all">
                                     @(capability.Enabled ? "Disable" : "Enable")
                                 </button>
                             </div>
@@ -183,13 +175,13 @@ else
     </div>
 
     @* Namespace Prefix *@
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <h2 class="text-lg font-semibold text-white mb-2">Namespace Prefix</h2>
-        <p class="text-sm text-gray-400 mb-3">
+    <div class="bg-white border-2 border-black shadow-[5px_5px_0_0_#000] p-6">
+        <h2 class="font-serif italic text-2xl text-black mb-2">Namespace Prefix</h2>
+        <p class="text-sm text-gray-500 mb-4">
             Tools from this server are exposed with the following prefix to avoid naming collisions:
         </p>
-        <div class="bg-gray-950 border border-gray-800 rounded-lg px-4 py-3">
-            <code class="text-green-400 text-sm font-mono">@(server.Slug)__&lt;tool_name&gt;</code>
+        <div class="bg-gray-50 border-2 border-black px-4 py-3">
+            <code class="text-black font-mono text-sm">@(server.Slug)__&lt;tool_name&gt;</code>
         </div>
     </div>
 
@@ -202,22 +194,22 @@ else
     @* Delete Confirmation Modal *@
     @if (showDeleteModal)
     {
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div class="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
-                <h3 class="text-xl font-bold text-white mb-2">Delete Server</h3>
-                <p class="text-gray-300 mb-1">
-                    Are you sure you want to delete <span class="font-semibold text-white">@server.Name</span>?
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+            <div class="bg-white border-2 border-black shadow-[8px_8px_0_0_#000] p-6 w-full max-w-md mx-4">
+                <h3 class="font-serif italic text-3xl text-black mb-3">Delete Server</h3>
+                <p class="text-black mb-1">
+                    Are you sure you want to delete <span class="font-semibold">@server.Name</span>?
                 </p>
-                <p class="text-sm text-gray-400 mb-6">
+                <p class="text-sm text-gray-500 mb-6">
                     This action cannot be undone. All tool namespace mappings for this server will be removed.
                 </p>
                 <div class="flex justify-end gap-3">
                     <button @onclick="CloseDeleteModal"
-                            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors">
+                            class="bg-white text-black text-sm font-medium px-4 py-2 border-2 border-black shadow-[3px_3px_0_0_#000] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px] transition-all">
                         Cancel
                     </button>
                     <button @onclick="ConfirmDelete"
-                            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors">
+                            class="bg-red-600 text-white text-sm font-semibold px-4 py-2 border-2 border-red-800 transition-all hover:bg-red-700">
                         Delete
                     </button>
                 </div>
@@ -255,8 +247,8 @@ else
 
     private string ToggleButtonClass =>
         server?.Enabled == true
-            ? "bg-yellow-600 hover:bg-yellow-700 text-white"
-            : "bg-green-600 hover:bg-green-700 text-white";
+            ? "bg-white text-amber-700 border-amber-600 shadow-[3px_3px_0_0_#d97706] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px]"
+            : "bg-white text-emerald-700 border-emerald-600 shadow-[3px_3px_0_0_#059669] hover:shadow-none hover:translate-x-[3px] hover:translate-y-[3px]";
 
     private LifecycleStatus? CurrentLifecycleStatus =>
         server is null || (server.Transport != "stdio_package_runner" && server.Transport != "stdio_container")
@@ -282,28 +274,28 @@ else
     {
         if (server?.Enabled != true)
         {
-            return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+            return new ServerStatusBadge("Stopped", "bg-gray-100 text-gray-600 border border-gray-400");
         }
 
         if (CurrentLifecycleStatus is not null)
         {
             return CurrentLifecycleStatus.State switch
             {
-                LifecycleState.Running => new ServerStatusBadge("Running", "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"),
-                LifecycleState.Crashed => new ServerStatusBadge("Crashed", "border-red-700/60 bg-red-950/40 text-red-300"),
-                LifecycleState.Restarting => new ServerStatusBadge("Restarting", "border-yellow-700/60 bg-yellow-950/40 text-yellow-300", true),
-                _ => new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400"),
+                LifecycleState.Running => new ServerStatusBadge("Running", "bg-emerald-500 text-white"),
+                LifecycleState.Crashed => new ServerStatusBadge("Crashed", "bg-red-500 text-white"),
+                LifecycleState.Restarting => new ServerStatusBadge("Restarting", "bg-amber-400 text-black", true),
+                _ => new ServerStatusBadge("Stopped", "bg-gray-100 text-gray-600 border border-gray-400"),
             };
         }
 
         if (!UpstreamManager.Connections.ContainsKey(server!.Slug))
         {
-            return new ServerStatusBadge("Stopped", "border-gray-700 bg-gray-900 text-gray-400");
+            return new ServerStatusBadge("Stopped", "bg-gray-100 text-gray-600 border border-gray-400");
         }
 
         return GetHealthStatus(server.Slug) == UpstreamHealthStatus.Degraded
-            ? new ServerStatusBadge("Degraded", "border-amber-700/60 bg-amber-950/40 text-amber-300")
-            : new ServerStatusBadge("Running", "border-emerald-700/60 bg-emerald-950/40 text-emerald-300");
+            ? new ServerStatusBadge("Degraded", "bg-amber-400 text-black")
+            : new ServerStatusBadge("Running", "bg-emerald-500 text-white");
     }
 
     private static string FormatTransport(string transport) => transport switch
@@ -353,7 +345,6 @@ else
             var imageTag = await ImageBuilder.RebuildImageAsync(server);
             rebuildMessage = $"Image rebuilt successfully: {imageTag}";
             rebuildSuccess = true;
-            // Reconnect after rebuild
             await UpstreamManager.DisconnectAsync(server.Slug);
             await UpstreamManager.SyncAsync();
         }
@@ -375,13 +366,11 @@ else
     private async Task OnEditSaved()
     {
         showEditModal = false;
-        // Reload by ID since the slug may have changed during edit
         var id = server?.Id;
         if (id is not null)
         {
             server = await ServerService.GetServerByIdAsync(id);
         }
-        // If the slug changed, navigate to the new URL
         if (server is not null && server.Slug != Slug)
         {
             Navigation.NavigateTo($"/servers/{server.Slug}", replace: true);

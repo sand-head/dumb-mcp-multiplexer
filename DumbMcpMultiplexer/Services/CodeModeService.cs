@@ -689,16 +689,14 @@ public class CodeModeService
 
         if (!string.IsNullOrWhiteSpace(serverFilter))
         {
-            var normalizedServerFilter = serverFilter.Trim();
+            var normalizedServerFilter = serverFilter.Trim().ToLowerInvariant();
             allowedServerSlugs = (await db.Servers
-                .Where(s => connectedSlugs.Contains(s.Slug))
-                .Select(s => new { s.Slug, s.Name })
-                .ToListAsync(ct))
-                .Where(server =>
-                    server.Slug.Equals(normalizedServerFilter, StringComparison.OrdinalIgnoreCase) ||
-                    server.Name.Equals(normalizedServerFilter, StringComparison.OrdinalIgnoreCase) ||
-                    $"{server.Name} ({server.Slug})".Equals(normalizedServerFilter, StringComparison.OrdinalIgnoreCase))
+                .Where(s => connectedSlugs.Contains(s.Slug) && (
+                    s.Slug.ToLower() == normalizedServerFilter ||
+                    s.Name.ToLower() == normalizedServerFilter ||
+                    (s.Name + " (" + s.Slug + ")").ToLower() == normalizedServerFilter))
                 .Select(server => server.Slug)
+                .ToListAsync(ct))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             if (allowedServerSlugs.Count == 0)

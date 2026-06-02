@@ -674,6 +674,9 @@ public class CodeModeService
         CancellationToken ct)
     {
         var connectedSlugs = upstream.Connections.Keys.ToList();
+        var connectedSlugsLower = connectedSlugs
+            .Select(slug => slug.ToLowerInvariant())
+            .ToList();
 
         var disabledToolLookup = await db.ServerCapabilities
             .Where(c => c.Kind == ServerCapability.ToolKind && !c.Enabled && connectedSlugs.Contains(c.Server.Slug))
@@ -691,7 +694,7 @@ public class CodeModeService
         {
             var normalizedServerFilter = serverFilter.Trim().ToLowerInvariant();
             allowedServerSlugs = (await db.Servers
-                .Where(s => connectedSlugs.Contains(s.Slug) && (
+                .Where(s => connectedSlugsLower.Contains(s.Slug.ToLower()) && (
                     s.Slug.ToLower() == normalizedServerFilter ||
                     s.Name.ToLower() == normalizedServerFilter ||
                     (s.Name + " (" + s.Slug + ")").ToLower() == normalizedServerFilter))

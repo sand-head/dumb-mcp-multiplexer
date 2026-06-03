@@ -229,9 +229,9 @@
             arguments = JsonSerializer.Deserialize<List<SkillArgument>>(_editArgumentsJson);
             arguments ??= [];
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _error = "Arguments must be valid JSON (array of objects).";
+            _error = $"Arguments JSON is invalid: {ex.Message}";
             return;
         }
 

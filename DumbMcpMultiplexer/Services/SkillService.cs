@@ -2,7 +2,6 @@ using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Models;
 using FuzzySharp;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
 
 namespace DumbMcpMultiplexer.Services;
 
@@ -101,7 +100,7 @@ public class SkillService(AppDbContext db)
         if (string.IsNullOrWhiteSpace(code))
             throw new InvalidOperationException("Skill code is required.");
 
-        var normalizedArgumentsJson = NormalizeArgumentsJson(arguments);
+        var normalizedArgumentsJson = SkillArgumentsCodec.Serialize(arguments);
 
         var existing = await db.Skills.FirstOrDefaultAsync(s => s.Name == name, ct);
         if (existing is not null)
@@ -165,30 +164,11 @@ public class SkillService(AppDbContext db)
 
         skill.Name = trimmedName;
         skill.Description = description?.Trim() ?? "";
-        skill.ArgumentsJson = NormalizeArgumentsJson(arguments);
+        skill.ArgumentsJson = SkillArgumentsCodec.Serialize(arguments);
         skill.Code = code;
         skill.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);
         return skill;
-    }
-
-    private static string NormalizeArgumentsJson(IReadOnlyList<SkillArgument>? arguments)
-    {
-        if (arguments is null || arguments.Count == 0)
-            return "[]";
-
-        var normalized = arguments
-            .Where(arg => !string.IsNullOrWhiteSpace(arg.Name))
-            .Select(arg => new SkillArgument
-            {
-                Name = arg.Name.Trim(),
-                Type = string.IsNullOrWhiteSpace(arg.Type) ? "string" : arg.Type.Trim(),
-                Description = arg.Description?.Trim() ?? "",
-                Required = arg.Required
-            })
-            .ToList();
-
-        return JsonSerializer.Serialize(normalized);
     }
 }

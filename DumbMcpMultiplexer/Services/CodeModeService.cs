@@ -560,7 +560,7 @@ public class CodeModeService
             {
                 existing.Description = description?.Trim() ?? "";
                 existing.Code = code;
-                existing.ArgumentsJson = SerializeSkillArguments(arguments);
+                existing.ArgumentsJson = SkillArgumentsCodec.Serialize(arguments);
                 existing.UpdatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
 
@@ -576,7 +576,7 @@ public class CodeModeService
                 Id = Guid.NewGuid().ToString("N"),
                 Name = name.Trim(),
                 Description = description?.Trim() ?? "",
-                ArgumentsJson = SerializeSkillArguments(arguments),
+                ArgumentsJson = SkillArgumentsCodec.Serialize(arguments),
                 Code = code,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -670,7 +670,7 @@ public class CodeModeService
                 {
                     name = s.Skill.Name,
                     description = s.Skill.Description,
-                    arguments = ParseSkillArgumentsJson(s.Skill.ArgumentsJson).Select(a => new
+                    arguments = SkillArgumentsCodec.Deserialize(s.Skill.ArgumentsJson).Select(a => new
                     {
                         name = a.Name,
                         type = a.Type,
@@ -690,7 +690,7 @@ public class CodeModeService
         lines.Add("");
         foreach (var (skill, _) in scored)
         {
-            var arguments = ParseSkillArgumentsJson(skill.ArgumentsJson);
+            var arguments = SkillArgumentsCodec.Deserialize(skill.ArgumentsJson);
             var argumentText = arguments.Count == 0
                 ? "no args"
                 : string.Join(", ", arguments.Select(arg => $"{arg.Name}{(arg.Required ? "*" : "")}"));
@@ -873,40 +873,6 @@ public class CodeModeService
         }
 
         return string.Join("\n", lines);
-    }
-
-    private static string SerializeSkillArguments(IReadOnlyList<SkillArgument>? arguments)
-    {
-        if (arguments is null || arguments.Count == 0)
-            return "[]";
-
-        var normalized = arguments
-            .Where(a => !string.IsNullOrWhiteSpace(a.Name))
-            .Select(a => new SkillArgument
-            {
-                Name = a.Name.Trim(),
-                Type = string.IsNullOrWhiteSpace(a.Type) ? "string" : a.Type.Trim(),
-                Description = a.Description?.Trim() ?? "",
-                Required = a.Required
-            })
-            .ToList();
-
-        return JsonSerializer.Serialize(normalized);
-    }
-
-    private static List<SkillArgument> ParseSkillArgumentsJson(string? argumentsJson)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsJson))
-            return [];
-
-        try
-        {
-            return JsonSerializer.Deserialize<List<SkillArgument>>(argumentsJson) ?? [];
-        }
-        catch
-        {
-            return [];
-        }
     }
 
     private static Dictionary<string, object?> LuaTableToDictionary(LuaTable table)

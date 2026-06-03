@@ -4,6 +4,7 @@ using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Models;
 using FuzzySharp;
 using Lua;
+using Lua.Standard;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Protocol;
 using ToonNetSerializer;
@@ -362,6 +363,12 @@ public class CodeModeService
         try
         {
             var state = LuaState.Create();
+            state.OpenBasicLibrary();
+            state.OpenTableLibrary();
+            state.OpenStringLibrary();
+            state.OpenMathLibrary();
+            state.OpenBitwiseLibrary();
+            state.OpenCoroutineLibrary();
 
             // Register call_tool(name, args) function
             state.Environment["call_tool"] = new LuaFunction(async (context, luaCt) =>
@@ -436,6 +443,12 @@ public class CodeModeService
 
                 // Execute the skill's code in a nested Lua state that shares the same call_tool and call_skill functions
                 var skillState = LuaState.Create();
+                skillState.OpenBasicLibrary();
+                skillState.OpenTableLibrary();
+                skillState.OpenStringLibrary();
+                skillState.OpenMathLibrary();
+                skillState.OpenBitwiseLibrary();
+                skillState.OpenCoroutineLibrary();
                 skillState.Environment["call_tool"] = state.Environment["call_tool"];
                 skillState.Environment["call_skill"] = state.Environment["call_skill"];
 

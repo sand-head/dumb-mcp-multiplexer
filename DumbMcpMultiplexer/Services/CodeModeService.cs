@@ -560,7 +560,7 @@ public class CodeModeService
             {
                 existing.Description = description?.Trim() ?? "";
                 existing.Code = code;
-                existing.ArgumentsJson = SkillArgumentsCodec.Serialize(arguments);
+                existing.Arguments = SkillArgumentsCodec.Normalize(arguments);
                 existing.UpdatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
 
@@ -576,7 +576,7 @@ public class CodeModeService
                 Id = Guid.NewGuid().ToString("N"),
                 Name = name.Trim(),
                 Description = description?.Trim() ?? "",
-                ArgumentsJson = SkillArgumentsCodec.Serialize(arguments),
+                Arguments = SkillArgumentsCodec.Normalize(arguments),
                 Code = code,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -670,7 +670,7 @@ public class CodeModeService
                 {
                     name = s.Skill.Name,
                     description = s.Skill.Description,
-                    arguments = SkillArgumentsCodec.Deserialize(s.Skill.ArgumentsJson).Select(a => new
+                    arguments = s.Skill.Arguments.Select(a => new
                     {
                         name = a.Name,
                         type = a.Type,
@@ -690,7 +690,7 @@ public class CodeModeService
         lines.Add("");
         foreach (var (skill, _) in scored)
         {
-            var arguments = SkillArgumentsCodec.Deserialize(skill.ArgumentsJson);
+            var arguments = skill.Arguments;
             var argumentText = arguments.Count == 0
                 ? "no args"
                 : string.Join(", ", arguments.Select(arg => $"{arg.Name}{(arg.Required ? "*" : "")}"));

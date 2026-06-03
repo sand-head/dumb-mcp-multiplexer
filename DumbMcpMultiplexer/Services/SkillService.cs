@@ -100,14 +100,14 @@ public class SkillService(AppDbContext db)
         if (string.IsNullOrWhiteSpace(code))
             throw new InvalidOperationException("Skill code is required.");
 
-        var normalizedArgumentsJson = SkillArgumentsCodec.Serialize(arguments);
+        var normalizedArguments = SkillArgumentsCodec.Normalize(arguments);
 
         var existing = await db.Skills.FirstOrDefaultAsync(s => s.Name == name, ct);
         if (existing is not null)
         {
             existing.Description = description?.Trim() ?? "";
             existing.Code = code;
-            existing.ArgumentsJson = normalizedArgumentsJson;
+            existing.Arguments = normalizedArguments;
             existing.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
             return existing;
@@ -118,7 +118,7 @@ public class SkillService(AppDbContext db)
             Id = Guid.NewGuid().ToString("N"),
             Name = name.Trim(),
             Description = description?.Trim() ?? "",
-            ArgumentsJson = normalizedArgumentsJson,
+            Arguments = normalizedArguments,
             Code = code,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -164,7 +164,7 @@ public class SkillService(AppDbContext db)
 
         skill.Name = trimmedName;
         skill.Description = description?.Trim() ?? "";
-        skill.ArgumentsJson = SkillArgumentsCodec.Serialize(arguments);
+        skill.Arguments = SkillArgumentsCodec.Normalize(arguments);
         skill.Code = code;
         skill.UpdatedAt = DateTime.UtcNow;
 

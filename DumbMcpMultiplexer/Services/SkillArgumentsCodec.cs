@@ -1,16 +1,19 @@
 using DumbMcpMultiplexer.Models;
-using System.Text.Json;
 
 namespace DumbMcpMultiplexer.Services;
 
 public static class SkillArgumentsCodec
 {
-    public static string Serialize(IReadOnlyList<SkillArgument>? arguments)
+    /// <summary>
+    /// Normalizes a raw argument list: trims whitespace, drops unnamed entries,
+    /// and defaults missing types to "string".
+    /// </summary>
+    public static List<SkillArgument> Normalize(IReadOnlyList<SkillArgument>? arguments)
     {
         if (arguments is null || arguments.Count == 0)
-            return "[]";
+            return [];
 
-        var normalized = arguments
+        return arguments
             .Where(a => !string.IsNullOrWhiteSpace(a.Name))
             .Select(a => new SkillArgument
             {
@@ -20,22 +23,5 @@ public static class SkillArgumentsCodec
                 Required = a.Required
             })
             .ToList();
-
-        return JsonSerializer.Serialize(normalized);
-    }
-
-    public static List<SkillArgument> Deserialize(string? argumentsJson)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsJson))
-            return [];
-
-        try
-        {
-            return JsonSerializer.Deserialize<List<SkillArgument>>(argumentsJson) ?? [];
-        }
-        catch
-        {
-            return [];
-        }
     }
 }

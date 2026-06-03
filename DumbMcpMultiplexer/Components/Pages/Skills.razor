@@ -97,7 +97,7 @@
 
             <div>
                 <p class="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-2">Arguments (JSON)</p>
-                <pre class="bg-gray-100 text-gray-800 p-4 text-sm font-mono overflow-x-auto border-2 border-black whitespace-pre-wrap">@(string.IsNullOrWhiteSpace(_viewingSkill.ArgumentsJson) ? "[]" : _viewingSkill.ArgumentsJson)</pre>
+                <pre class="bg-gray-100 text-gray-800 p-4 text-sm font-mono overflow-x-auto border-2 border-black whitespace-pre-wrap">@JsonSerializer.Serialize(_viewingSkill.Arguments, new JsonSerializerOptions { WriteIndented = true })</pre>
             </div>
 
             <div class="flex justify-end border-t-2 border-black pt-4">
@@ -212,7 +212,7 @@
         _editName = skill.Name;
         _editDescription = skill.Description;
         _editCode = skill.Code;
-        _editArgumentsJson = string.IsNullOrWhiteSpace(skill.ArgumentsJson) ? "[]" : skill.ArgumentsJson;
+        _editArgumentsJson = JsonSerializer.Serialize(skill.Arguments, new JsonSerializerOptions { WriteIndented = true });
     }
 
     private void CloseEdit()

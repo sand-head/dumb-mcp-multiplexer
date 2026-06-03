@@ -229,10 +229,33 @@ builder.Services.AddMcpServer(options =>
             var skillName = request.Params?.Arguments?.TryGetValue("name", out var n) == true ? n.ToString() ?? "" : "";
             var skillDesc = request.Params?.Arguments?.TryGetValue("description", out var desc) == true ? desc.ToString() ?? "" : "";
             var skillCode = request.Params?.Arguments?.TryGetValue("code", out var sc) == true ? sc.ToString() ?? "" : "";
+            var skillArguments = new List<SkillArgument>();
+            if (request.Params?.Arguments?.TryGetValue("arguments", out var argsValue) == true
+                && argsValue is System.Text.Json.JsonElement argsJson
+                && argsJson.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var argItem in argsJson.EnumerateArray())
+                {
+                    if (argItem.ValueKind != System.Text.Json.JsonValueKind.Object)
+                        continue;
+
+                    var argName = argItem.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
+                    if (string.IsNullOrWhiteSpace(argName))
+                        continue;
+
+                    skillArguments.Add(new SkillArgument
+                    {
+                        Name = argName,
+                        Type = argItem.TryGetProperty("type", out var typeProp) ? typeProp.GetString() ?? "string" : "string",
+                        Description = argItem.TryGetProperty("description", out var argDescProp) ? argDescProp.GetString() ?? "" : "",
+                        Required = argItem.TryGetProperty("required", out var reqProp) && reqProp.ValueKind == System.Text.Json.JsonValueKind.True
+                    });
+                }
+            }
 
             logger.LogInformation("[{SessionId}] code_mode/create_skill: name={Name}", sessionId, skillName);
 
-            var result = await CodeModeService.HandleCreateSkillAsync(db, skillName, skillDesc, skillCode, logger, ct);
+            var result = await CodeModeService.HandleCreateSkillAsync(db, skillName, skillDesc, skillCode, skillArguments, logger, ct);
             logger.LogInformation("[{SessionId}] code_mode/create_skill completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
             return result;
         }

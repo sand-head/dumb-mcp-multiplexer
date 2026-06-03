@@ -128,6 +128,32 @@ public class CodeModeService
                         "code": {
                             "type": "string",
                             "description": "The Lua code for the skill. Should use `...` (varargs) to accept arguments passed via call_skill. Has access to call_tool(name, args) and call_skill(name, args). Example: local args = ... ; return call_tool('github__get_issue', { owner = args.owner, repo = args.repo, issue_number = args.number })"
+                        },
+                        "arguments": {
+                            "type": "array",
+                            "description": "Optional argument definitions for call_skill(name, args), so clients know what to pass.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Argument name (matches the key in args table)"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "description": "Expected data type (e.g. string, integer, boolean, object, array)"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Argument description, same style as tool parameter descriptions"
+                                    },
+                                    "required": {
+                                        "type": "boolean",
+                                        "description": "Whether this argument is required"
+                                    }
+                                },
+                                "required": ["name"]
+                            }
                         }
                     },
                     "required": ["name", "description", "code"]
@@ -505,6 +531,7 @@ public class CodeModeService
         string name,
         string description,
         string code,
+        IReadOnlyList<SkillArgument>? arguments,
         ILogger logger,
         CancellationToken ct)
     {
@@ -533,6 +560,7 @@ public class CodeModeService
             {
                 existing.Description = description?.Trim() ?? "";
                 existing.Code = code;
+                existing.ArgumentsJson = SerializeSkillArguments(arguments);
                 existing.UpdatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
 
@@ -548,6 +576,7 @@ public class CodeModeService
                 Id = Guid.NewGuid().ToString("N"),
                 Name = name.Trim(),
                 Description = description?.Trim() ?? "",
+                ArgumentsJson = SerializeSkillArguments(arguments),
                 Code = code,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -637,7 +666,18 @@ public class CodeModeService
             var payload = new
             {
                 total = scored.Count,
-                skills = scored.Select(s => new { name = s.Skill.Name, description = s.Skill.Description }).ToArray()
+                skills = scored.Select(s => new
+                {
+                    name = s.Skill.Name,
+                    description = s.Skill.Description,
+                    arguments = ParseSkillArgumentsJson(s.Skill.ArgumentsJson).Select(a => new
+                    {
+                        name = a.Name,
+                        type = a.Type,
+                        description = a.Description,
+                        required = a.Required
+                    })
+                }).ToArray()
             };
             return new CallToolResult
             {
@@ -650,7 +690,11 @@ public class CodeModeService
         lines.Add("");
         foreach (var (skill, _) in scored)
         {
-            lines.Add($"- {skill.Name}: {skill.Description}");
+            var arguments = ParseSkillArgumentsJson(skill.ArgumentsJson);
+            var argumentText = arguments.Count == 0
+                ? "no args"
+                : string.Join(", ", arguments.Select(arg => $"{arg.Name}{(arg.Required ? "*" : "")}"));
+            lines.Add($"- {skill.Name}: {skill.Description} (args: {argumentText})");
         }
         lines.Add("");
         lines.Add("Use call_skill(name, args) inside execute to invoke a skill.");
@@ -829,6 +873,40 @@ public class CodeModeService
         }
 
         return string.Join("\n", lines);
+    }
+
+    private static string SerializeSkillArguments(IReadOnlyList<SkillArgument>? arguments)
+    {
+        if (arguments is null || arguments.Count == 0)
+            return "[]";
+
+        var normalized = arguments
+            .Where(a => !string.IsNullOrWhiteSpace(a.Name))
+            .Select(a => new SkillArgument
+            {
+                Name = a.Name.Trim(),
+                Type = string.IsNullOrWhiteSpace(a.Type) ? "string" : a.Type.Trim(),
+                Description = a.Description?.Trim() ?? "",
+                Required = a.Required
+            })
+            .ToList();
+
+        return JsonSerializer.Serialize(normalized);
+    }
+
+    private static List<SkillArgument> ParseSkillArgumentsJson(string? argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+            return [];
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<SkillArgument>>(argumentsJson) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     private static Dictionary<string, object?> LuaTableToDictionary(LuaTable table)

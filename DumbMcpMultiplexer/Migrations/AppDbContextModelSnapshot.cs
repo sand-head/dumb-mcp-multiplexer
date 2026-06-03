@@ -265,6 +265,13 @@ namespace DumbMcpMultiplexer.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("code");
 
+                    b.Property<string>("ArgumentsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("arguments_json");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("created_at");

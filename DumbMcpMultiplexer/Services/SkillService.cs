@@ -2,6 +2,7 @@ using DumbMcpMultiplexer.Data;
 using DumbMcpMultiplexer.Models;
 using FuzzySharp;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace DumbMcpMultiplexer.Services;
 
@@ -88,18 +89,26 @@ public class SkillService(AppDbContext db)
     /// <summary>
     /// Creates or updates a skill. If a skill with the given name already exists, it is updated.
     /// </summary>
-    public async Task<Skill> CreateOrUpdateAsync(string name, string description, string code, CancellationToken ct = default)
+    public async Task<Skill> CreateOrUpdateAsync(
+        string name,
+        string description,
+        string code,
+        IReadOnlyList<SkillArgument>? arguments = null,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new InvalidOperationException("Skill name is required.");
         if (string.IsNullOrWhiteSpace(code))
             throw new InvalidOperationException("Skill code is required.");
 
+        var normalizedArgumentsJson = NormalizeArgumentsJson(arguments);
+
         var existing = await db.Skills.FirstOrDefaultAsync(s => s.Name == name, ct);
         if (existing is not null)
         {
             existing.Description = description?.Trim() ?? "";
             existing.Code = code;
+            existing.ArgumentsJson = normalizedArgumentsJson;
             existing.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
             return existing;
@@ -110,6 +119,7 @@ public class SkillService(AppDbContext db)
             Id = Guid.NewGuid().ToString("N"),
             Name = name.Trim(),
             Description = description?.Trim() ?? "",
+            ArgumentsJson = normalizedArgumentsJson,
             Code = code,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -129,5 +139,56 @@ public class SkillService(AppDbContext db)
         db.Skills.Remove(skill);
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    public async Task<Skill?> UpdateAsync(
+        string id,
+        string name,
+        string description,
+        string code,
+        IReadOnlyList<SkillArgument>? arguments,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("Skill name is required.");
+        if (string.IsNullOrWhiteSpace(code))
+            throw new InvalidOperationException("Skill code is required.");
+
+        var skill = await db.Skills.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (skill is null)
+            return null;
+
+        var trimmedName = name.Trim();
+        var existingByName = await db.Skills.FirstOrDefaultAsync(s => s.Name == trimmedName && s.Id != id, ct);
+        if (existingByName is not null)
+            throw new InvalidOperationException($"A skill named '{trimmedName}' already exists.");
+
+        skill.Name = trimmedName;
+        skill.Description = description?.Trim() ?? "";
+        skill.ArgumentsJson = NormalizeArgumentsJson(arguments);
+        skill.Code = code;
+        skill.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+        return skill;
+    }
+
+    private static string NormalizeArgumentsJson(IReadOnlyList<SkillArgument>? arguments)
+    {
+        if (arguments is null || arguments.Count == 0)
+            return "[]";
+
+        var normalized = arguments
+            .Where(arg => !string.IsNullOrWhiteSpace(arg.Name))
+            .Select(arg => new SkillArgument
+            {
+                Name = arg.Name.Trim(),
+                Type = string.IsNullOrWhiteSpace(arg.Type) ? "string" : arg.Type.Trim(),
+                Description = arg.Description?.Trim() ?? "",
+                Required = arg.Required
+            })
+            .ToList();
+
+        return JsonSerializer.Serialize(normalized);
     }
 }

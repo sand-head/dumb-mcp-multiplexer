@@ -17,6 +17,7 @@
   <ItemGroup>
     <PackageReference Include="Docker.DotNet" Version="3.125.15" />
     <PackageReference Include="FuzzySharp" Version="2.0.2" />
+    <PackageReference Include="GaelJ.BlazorCodeMirror6" Version="0.10.0" />
     <PackageReference Include="LuaCSharp" Version="0.5.5" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.8" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8">

@@ -140,9 +140,14 @@
                 </div>
                 <div>
                     <label class="block text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Lua Code</label>
-                    <textarea @bind="_editCode"
-                              rows="14"
-                              class="w-full border-2 border-black px-3 py-2 text-sm font-mono"></textarea>
+                    <CodeMirror6Wrapper @bind-Doc="_editCode"
+                                        Language="CodeMirrorLanguage.Lua"
+                                        Theme="ThemeMirrorTheme.WhiteLight"
+                                        TabSize="4"
+                                        IndentationUnit="4"
+                                        LineWrapping="false"
+                                        MaxHeight="@("24em")"
+                                        Setup="@(new CodeMirrorSetup { BindMode = DocumentBindMode.OnDelayedInput })" />
                 </div>
             </div>
 

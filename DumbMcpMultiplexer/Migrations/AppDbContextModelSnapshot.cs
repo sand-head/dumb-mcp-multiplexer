@@ -260,12 +260,12 @@ namespace DumbMcpMultiplexer.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("id");
 
-                    b.Property<string>("ArgumentsJson")
+                    b.Property<string>("Arguments")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasDefaultValue("[]")
-                        .HasColumnName("arguments_json");
+                        .HasColumnName("arguments_json")
+                        .HasDefaultValueSql("'[]'");
 
                     b.Property<string>("Code")
                         .IsRequired()

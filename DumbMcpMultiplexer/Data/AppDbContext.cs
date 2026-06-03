@@ -139,7 +139,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Name).HasColumnName("name").IsRequired();
             entity.Property(e => e.Description).HasColumnName("description").IsRequired().HasDefaultValue("");
-            entity.Property(e => e.Arguments).HasColumnName("arguments_json").IsRequired().HasDefaultValue("[]").HasConversion<SkillArgumentsConverter>();
+            entity.Property(e => e.Arguments).HasColumnName("arguments_json").IsRequired().HasDefaultValueSql("'[]'").HasConversion(new SkillArgumentsConverter(), new SkillArgumentsComparer());
             entity.Property(e => e.Code).HasColumnName("code").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();

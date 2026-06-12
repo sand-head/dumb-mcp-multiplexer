@@ -100,7 +100,7 @@ builder.Services.AddMcpServer(options =>
     var logger = request.Services!.GetRequiredService<ILogger<Program>>();
     var profileContext = await profileService.GetProfileContextAsync(GetEndpointProfile(request.Services!), ct);
 
-    // If Code Mode is enabled for this profile, return only meta-tools (search, get_schema, execute)
+    // If Code Mode is enabled for this profile, return only meta-tools (search, execute, etc.)
     if (profileContext.CodeModeEnabled)
     {
         var enabledConnectedSlugs = upstream.Connections.Keys
@@ -182,35 +182,11 @@ builder.Services.AddMcpServer(options =>
             var serverFilter2 = request.Params?.Arguments?.TryGetValue("server", out var s) == true ? s.ToString() : null;
             var limit = request.Params?.Arguments?.TryGetValue("limit", out var l) == true && int.TryParse(l.ToString(), out var lv) ? lv : CodeModeService.DefaultSearchLimit;
 
-            logger.LogInformation("[{SessionId}] code_mode/search: query={Query}, server={Server}, limit={Limit}",
+            logger.LogInformation("[{SessionId}] code_mode/search_tools: query={Query}, server={Server}, limit={Limit}",
                 sessionId, query, serverFilter2 ?? "*", limit);
 
-            var result = await CodeModeService.HandleSearchAsync(upstream, db, query, serverFilter2, limit, profileContext, logger, profileContext.CodeModeToonEnabled, ct);
-            logger.LogInformation("[{SessionId}] code_mode/search completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
-            return result;
-        }
-
-        if (toolName == CodeModeService.GetSchemaToolName)
-        {
-            var toolNames = new List<string>();
-            if (request.Params?.Arguments?.TryGetValue("tools", out var toolsArg) == true)
-            {
-                if (toolsArg is System.Text.Json.JsonElement jsonArr && jsonArr.ValueKind == System.Text.Json.JsonValueKind.Array)
-                {
-                    foreach (var item in jsonArr.EnumerateArray())
-                    {
-                        if (item.GetString() is string name)
-                            toolNames.Add(name);
-                    }
-                }
-            }
-            var detail = request.Params?.Arguments?.TryGetValue("detail", out var d) == true ? d.ToString() ?? "detailed" : "detailed";
-
-            logger.LogInformation("[{SessionId}] code_mode/get_schema: tools=[{Tools}], detail={Detail}",
-                sessionId, string.Join(", ", toolNames), detail);
-
-            var result = await CodeModeService.HandleGetSchemaAsync(upstream, db, toolNames, detail, profileContext, logger, profileContext.CodeModeToonEnabled, ct);
-            logger.LogInformation("[{SessionId}] code_mode/get_schema completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
+            var result = await CodeModeService.HandleSearchToolsAsync(upstream, db, query, serverFilter2, limit, profileContext, logger, profileContext.CodeModeToonEnabled, ct);
+            logger.LogInformation("[{SessionId}] code_mode/search_tools completed in {Elapsed}ms", sessionId, sw.ElapsedMilliseconds);
             return result;
         }
 
@@ -274,7 +250,7 @@ builder.Services.AddMcpServer(options =>
 
         // If code mode is enabled but the tool isn't a meta-tool, it shouldn't be callable directly
         throw new McpProtocolException(
-            $"Tool '{toolName}' is not available in Code Mode. Use 'search' to find tools, then 'execute' to call them via Lua code.",
+            $"Tool '{toolName}' is not available in Code Mode. Use 'search' to find tools and inspect their schemas, then 'execute' to call them via Lua code.",
             McpErrorCode.InvalidParams);
     }
 

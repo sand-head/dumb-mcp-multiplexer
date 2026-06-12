@@ -18,8 +18,7 @@ namespace DumbMcpMultiplexer.Services;
 /// </summary>
 public class CodeModeService
 {
-    public const string SearchToolName = "search";
-    public const string GetSchemaToolName = "get_schema";
+    public const string SearchToolName = "search_tools";
     public const string ExecuteToolName = "execute";
     public const string CreateSkillToolName = "create_skill";
     public const string SearchSkillsToolName = "search_skills";
@@ -46,7 +45,7 @@ public class CodeModeService
             new Tool
             {
                 Name = SearchToolName,
-                Description = $"Search for available tools by keyword. Returns tool names and brief descriptions. Use this to discover what tools are available before writing code to call them. Results are ranked by relevance. If you get too many results, narrow your query or filter by server.{serverList}{(toonEnabled ? " Results are returned in TOON format." : "")}",
+                Description = $"Search for available tools by keyword. Returns tool names, descriptions, and parameter schemas. Use this to discover tools and understand their parameters before writing code to call them. Results are ranked by relevance. If you get too many results, narrow your query or filter by server.{serverList}{(toonEnabled ? " Results are returned in TOON format." : "")}",
                 InputSchema = JsonDocument.Parse("""
                 {
                     "type": "object",
@@ -67,29 +66,6 @@ public class CodeModeService
                         }
                     },
                     "required": ["query"]
-                }
-                """).RootElement
-            },
-            new Tool
-            {
-                Name = GetSchemaToolName,
-                Description = $"Get detailed parameter schemas for specific tools by name. Call this after searching to learn the exact parameters a tool expects before writing code that calls it. You can request multiple tools at once.{(toonEnabled ? " Schemas are returned in TOON format." : "")}",
-                InputSchema = JsonDocument.Parse("""
-                {
-                    "type": "object",
-                    "properties": {
-                        "tools": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "List of fully-qualified tool names to get schemas for (e.g. ['github__create_issue', 'github__search_pull_requests'])"
-                        },
-                        "detail": {
-                            "type": "string",
-                            "enum": ["brief", "detailed", "full"],
-                            "description": "Level of detail: 'brief' = names and descriptions only, 'detailed' = parameter names/types/required (default), 'full' = complete JSON schema"
-                        }
-                    },
-                    "required": ["tools"]
                 }
                 """).RootElement
             },
@@ -188,9 +164,9 @@ public class CodeModeService
     }
 
     /// <summary>
-    /// Handles the 'search' meta-tool call. Returns matching tools ranked by relevance.
+    /// Handles the 'search_tools' meta-tool call. Returns matching tools with schemas, ranked by relevance.
     /// </summary>
-    public static async Task<CallToolResult> HandleSearchAsync(
+    public static async Task<CallToolResult> HandleSearchToolsAsync(
         UpstreamManager upstream,
         AppDbContext db,
         string query,
@@ -220,7 +196,7 @@ public class CodeModeService
             {
                 total = totalCount,
                 shown = pageTools.Count,
-                tools = pageTools.Select(t => new { name = t.Name, description = t.Description ?? "" }).ToArray()
+                tools = pageTools.Select(t => new { name = t.Name, description = t.Description ?? "", parameters = BuildParameterList(t) }).ToArray()
             };
             return new CallToolResult
             {
@@ -229,11 +205,23 @@ public class CodeModeService
         }
 
         var lines = new List<string>();
-        lines.Add($"{pageTools.Count} of {totalCount} tools:");
+        lines.Add($"{pageTools.Count} tool(s) found:");
         lines.Add("");
         foreach (var tool in pageTools)
         {
-            lines.Add($"- {tool.Name}: {tool.Description ?? "(no description)"}");
+            var paramList = BuildParameterList(tool);
+            var paramText = paramList.Count == 0
+                ? "no params"
+                : string.Join(", ", paramList.Select(p =>
+                {
+                    dynamic dp = p;
+                    var label = (bool)dp.required ? $"{dp.name}*" : (string)dp.name;
+                    var type = (string)dp.type;
+                    var desc = (string)dp.description;
+                    var part = string.IsNullOrEmpty(type) ? label : $"{label} ({type})";
+                    return string.IsNullOrEmpty(desc) ? part : $"{part}: {desc}";
+                }));
+            lines.Add($"- {tool.Name}: {tool.Description ?? "(no description)"} (params: {paramText})");
         }
 
         if (totalCount > limit)
@@ -242,97 +230,12 @@ public class CodeModeService
             lines.Add($"({totalCount - limit} more results not shown — refine your query or increase limit)");
         }
 
+        lines.Add("");
+        lines.Add("Use call_tool(name, args) inside execute to invoke a tool.");
+
         return new CallToolResult
         {
             Content = [new TextContentBlock { Text = string.Join("\n", lines) }]
-        };
-    }
-
-    /// <summary>
-    /// Handles the 'get_schema' meta-tool call. Returns parameter schemas for the requested tools.
-    /// </summary>
-    public static async Task<CallToolResult> HandleGetSchemaAsync(
-        UpstreamManager upstream,
-        AppDbContext db,
-        IReadOnlyList<string> toolNames,
-        string detail,
-        ProfileService.ActiveProfileContext profileContext,
-        ILogger logger,
-        bool toonEnabled,
-        CancellationToken ct)
-    {
-        if (toolNames.Count == 0)
-        {
-            return new CallToolResult
-            {
-                Content = [new TextContentBlock { Text = "No tool names provided. Pass a 'tools' array with tool names from search results." }]
-            };
-        }
-
-        // Look up each requested tool from upstream servers
-        var allTools = await GetMatchingToolsAsync(upstream, db, "", null, profileContext, logger, ct);
-        var toolLookup = allTools.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
-
-        if (toonEnabled)
-        {
-            var schemas = new List<object?>();
-            foreach (var name in toolNames)
-            {
-                if (!toolLookup.TryGetValue(name, out var tool))
-                {
-                    schemas.Add(new { name, found = false, error = "Not found. Check the tool name is correct (use search to find tools)." });
-                    continue;
-                }
-
-                if (detail == "brief")
-                {
-                    schemas.Add(new { name = tool.Name, description = tool.Description ?? "" });
-                }
-                else
-                {
-                    // "detailed" and "full" both emit the structured parameter list in TOON mode
-                    var parameters = BuildParameterList(tool);
-                    schemas.Add(new { name = tool.Name, description = tool.Description ?? "", parameters });
-                }
-            }
-            return new CallToolResult
-            {
-                Content = [new TextContentBlock { Text = ToonNet.Encode(schemas) }]
-            };
-        }
-
-        var sections = new List<string>();
-        foreach (var name in toolNames)
-        {
-            if (!toolLookup.TryGetValue(name, out var tool))
-            {
-                sections.Add($"### {name}\n\nNot found. Check the tool name is correct (use search to find tools).");
-                continue;
-            }
-
-            switch (detail)
-            {
-                case "brief":
-                    sections.Add($"### {tool.Name}\n\n{tool.Description ?? "(no description)"}");
-                    break;
-
-                case "full":
-                    var fullJson = tool.InputSchema.ValueKind != JsonValueKind.Undefined
-                        ? JsonSerializer.Serialize(tool.InputSchema, new JsonSerializerOptions { WriteIndented = true })
-                        : "{}";
-                    sections.Add($"### {tool.Name}\n\n{tool.Description ?? "(no description)"}\n\n**Full JSON Schema**\n```json\n{fullJson}\n```");
-                    break;
-
-                case "detailed":
-                default:
-                    sections.Add(FormatDetailedSchema(tool));
-                    break;
-            }
-        }
-
-        return new CallToolResult
-        {
-            Content = [new TextContentBlock { Text = string.Join("\n\n", sections) }]
         };
     }
 
@@ -641,7 +544,7 @@ public class CodeModeService
         List<(Skill Skill, int Score)> scored;
         if (string.IsNullOrWhiteSpace(query))
         {
-            scored = allSkills.OrderBy(s => s.Name).Take(limit).Select(s => (s, 0)).ToList();
+            scored = allSkills.OrderBy(s => s.Name).Select(s => (s, 0)).ToList();
         }
         else
         {
@@ -663,10 +566,13 @@ public class CodeModeService
                 scored.Add((skill, combinedScore));
             }
 
-            scored = scored.OrderByDescending(s => s.Score).Take(limit).ToList();
+            scored = scored.OrderByDescending(s => s.Score).ToList();
         }
 
-        if (scored.Count == 0)
+        var totalCount = scored.Count;
+        var page = scored.Take(limit).ToList();
+
+        if (page.Count == 0)
         {
             return new CallToolResult
             {
@@ -678,8 +584,9 @@ public class CodeModeService
         {
             var payload = new
             {
-                total = scored.Count,
-                skills = scored.Select(s => new
+                total = totalCount,
+                shown = page.Count,
+                skills = page.Select(s => new
                 {
                     name = s.Skill.Name,
                     description = s.Skill.Description,
@@ -699,16 +606,28 @@ public class CodeModeService
         }
 
         var lines = new List<string>();
-        lines.Add($"{scored.Count} skill(s) found:");
+        lines.Add($"{page.Count} skill(s) found:");
         lines.Add("");
-        foreach (var (skill, _) in scored)
+        foreach (var (skill, _) in page)
         {
             var arguments = skill.Arguments;
             var argumentText = arguments.Count == 0
                 ? "no args"
-                : string.Join(", ", arguments.Select(arg => $"{arg.Name}{(arg.Required ? "*" : "")}"));
+                : string.Join(", ", arguments.Select(arg =>
+                {
+                    var label = arg.Required ? $"{arg.Name}*" : arg.Name;
+                    var part = string.IsNullOrEmpty(arg.Type) ? label : $"{label} ({arg.Type})";
+                    return string.IsNullOrEmpty(arg.Description) ? part : $"{part}: {arg.Description}";
+                }));
             lines.Add($"- {skill.Name}: {skill.Description} (args: {argumentText})");
         }
+
+        if (totalCount > limit)
+        {
+            lines.Add("");
+            lines.Add($"({totalCount - limit} more results not shown — refine your query or increase limit)");
+        }
+
         lines.Add("");
         lines.Add("Use call_skill(name, args) inside execute to invoke a skill.");
 

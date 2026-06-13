@@ -27,6 +27,7 @@ public sealed class UpstreamManager(
 
     private static readonly Dictionary<string, (string Image, string CacheEnvVar, string CacheSubdir)> PackageRunners = new()
     {
+        ["dnx"] = ("mcr.microsoft.com/dotnet/sdk:10.0", "NUGET_PACKAGES", "/mnt/cache/dnx/nuget"),
         ["uvx"] = ("ghcr.io/astral-sh/uv:python3.12-trixie-slim", "UV_CACHE_DIR", "/mnt/cache/uv"),
         ["npx"] = ("node:22-slim", "NPM_CONFIG_CACHE", "/mnt/cache/npx"),
     };

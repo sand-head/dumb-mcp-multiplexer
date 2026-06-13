@@ -5,7 +5,7 @@
 Add support for local/stdio MCP servers to the multiplexer, using containers as the universal execution backend. Three modes of connecting to an upstream MCP server:
 
 1. **Remote** — existing HTTP transport (already implemented)
-2. **Package Runner** — specify a runner (`uvx`, `npx`) + package name; uses a well-known public base image with a shared cache volume, no build step
+2. **Package Runner** — specify a runner (`dnx`, `uvx`, `npx`) + package name; uses a well-known public base image with a shared cache volume, no build step
 3. **Custom Containerfile** — provide a Containerfile; built via the Docker API, cached by content hash
 
 All container communication happens through the Docker-compatible REST API socket (works identically with Podman and Docker).
@@ -45,7 +45,7 @@ No CLI parsing. No "is this podman or docker" detection logic. One socket, one A
 
 ## Mode 2: Package Runner
 
-The simplest and most common local mode. Covers `uvx`, `npx`, and similar tools that fetch-and-run packages with built-in caching.
+The simplest and most common local mode. Covers `dnx`, `uvx`, `npx`, and similar tools that fetch-and-run packages with built-in caching.
 
 ### How it works
 
@@ -53,6 +53,7 @@ No image build. Use a well-known public base image directly, pass the package co
 
 | Runner | Base Image | Cache Volume Path | Example Command |
 |--------|-----------|-------------------|-----------------|
+| `dnx` | `mcr.microsoft.com/dotnet/sdk:10.0` | `/mnt/cache/dnx/nuget` | `dnx Contoso.SampleMcpServer@0.0.1-beta --yes` |
 | `uvx` | `ghcr.io/astral-sh/uv:python3.12-slim` | `/root/.cache/uv` | `uvx music-assistant-mcp` |
 | `npx` | `node:22-slim` | `/root/.npm/_npx` | `npx @modelcontextprotocol/server-filesystem /data` |
 
@@ -87,8 +88,8 @@ A single named volume (`dumb-mcp-runner-cache`) is shared across ALL package run
 
 | Field | Example |
 |-------|---------|
-| Runner | `uvx` (dropdown) |
-| Package / Command | `uvx music-assistant-mcp` |
+| Runner | `dnx`, `uvx`, or `npx` (dropdown) |
+| Package / Command | `dnx Contoso.SampleMcpServer@0.0.1-beta --yes` |
 | Environment Variables | `MA_SERVER_URL=http://10.0.0.5:8095`, `MA_TOKEN=abc123` |
 | Volume Mounts | (optional, for MCPs needing host path access) |
 

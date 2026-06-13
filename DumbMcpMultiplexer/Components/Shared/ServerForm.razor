@@ -54,7 +54,7 @@
                         @onchange="OnTransportChanged"
                         class="w-full bg-white border-2 border-black px-3 py-2 text-black text-sm focus:outline-none appearance-none">
                     <option value="remote_http">Remote HTTP</option>
-                    <option value="stdio_package_runner">Package Runner (uvx, npx)</option>
+                    <option value="stdio_package_runner">Package Runner (dnx, uvx, npx)</option>
                     <option value="stdio_container">Container</option>
                 </select>
             </div>
@@ -113,6 +113,7 @@
                             @onchange="(e) => _packageRunner = e.Value?.ToString() ?? string.Empty"
                             class="w-full bg-white border-2 border-black px-3 py-2 text-black text-sm focus:outline-none appearance-none">
                         <option value="">— Select Runner —</option>
+                        <option value="dnx">dnx (.NET SDK/NuGet)</option>
                         <option value="uvx">uvx (Python/uv)</option>
                         <option value="npx">npx (Node.js)</option>
                     </select>
@@ -123,9 +124,9 @@
                     <input type="text"
                            value="@_command"
                            @oninput="(e) => _command = e.Value?.ToString() ?? string.Empty"
-                           placeholder="uvx music-assistant-mcp"
+                           placeholder="dnx Contoso.SampleMcpServer@0.0.1-beta --yes"
                            class="w-full bg-white border-2 border-black px-3 py-2 font-mono text-black placeholder-gray-400 text-sm focus:outline-none" />
-                    <p class="mt-1 text-xs text-gray-400">Full command to execute (e.g. "uvx music-assistant-mcp" or "npx @@modelcontextprotocol/server-filesystem /data")</p>
+                    <p class="mt-1 text-xs text-gray-400">Full command to execute (e.g. "dnx Contoso.SampleMcpServer@0.0.1-beta --yes", "uvx music-assistant-mcp", or "npx @@modelcontextprotocol/server-filesystem /data")</p>
                 </div>
 
                 <div>
